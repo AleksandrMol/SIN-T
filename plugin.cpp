@@ -12,6 +12,8 @@
 
 #include "clap/clap.h"
 
+#include "./tools/tools.h"
+
 // ------------
 // Буду каждый плагин начинать с ID плагина.
 const char* MY_PLUGIN_ID = "tutorialPlugin.mycompany.helloclap";
@@ -28,8 +30,9 @@ static const clap_plugin_descriptor s_my_plugin_desc = {
 
   // Теги для DAW, чтобы DAW понимала тип плагина
   .features = (const char *[]) {
-    CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, // Аудио эффект
-    CLAP_PLUGIN_FEATURE_STEREO, // для работы со стерео звуком
+    CLAP_PLUGIN_FEATURE_INSTRUMENT, // Инструмент
+    CLAP_PLUGIN_FEATURE_SYNTHESIZER, // Аудио эффект
+    CLAP_PLUGIN_FEATURE_STEREO, // Для работы со стерео звуком
     NULL
   },
 };
@@ -46,7 +49,10 @@ struct MyPluginInstance {
   const clap_host_t* host; // Указатель на DAW
   float sample_rate; // Частота дискретизации
 
-  // Можно добавить параметры плагина
+  bool is_note_on;      // Зажата ли сейчас нота?
+  int32_t active_note;  // Номер MIDI ноты (0-127)
+  float phase;          // Текущая фаза осциллятора (от 0.0 до 1.0)
+  float phase_step;     // На сколько сдвигать фазу с каждым сэмплом (зависит от частоты ноты)
 };
 // ------------
 
@@ -94,6 +100,80 @@ static clap_process_status my_plugin_process(
   const struct clap_plugin *plugin, 
   const clap_process_t *process
 ) {
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  const uint32_t total_frames = process->frames_count;
+  const uint32_t num_events = process->in_events->size(process->in_events);
+  uint32_t event_index = 0;
+
+  // Получаем указатели на левый (0) и правый (1) аудио-каналы DAW
+  float* out_l = process->audio_outputs[0].data32[0];
+  float* out_r = process->audio_outputs[0].data32[1];
+  
+  // Цикл по каждому сэмплу в текущем аудио-блоке
+  for (uint32_t frame = 0; frame < total_frames; ++frame) {
+
+    // 1. ПРОВЕРКА MIDI СОБЫТИЙ
+    // Если на текущем сэмпле (frame) есть событие — обрабатываем его
+    while (event_index < num_events) {
+      const clap_event_header_t* event_header = process->in_events->get(process->in_events, event_index);
+
+      // Если событие произойдет позже текущего сэмпла — выходим из while и обрабатываем его в свой черед
+      if (event_header->time > frame) {
+        break;
+      }
+
+      // Проверяем, что это событие из ядра CLAP (MIDI/Note события)
+      if (event_header->space_id == CLAP_CORE_EVENT_SPACE_ID) {
+        // Нажатие клавиши (Note On)
+        if (event_header->type == CLAP_EVENT_NOTE_ON) {
+          const clap_event_note_t* note_event = (const clap_event_note_t*)event_header;
+          instance->is_note_on = true;
+          instance->active_note = note_event->key;
+
+          // Вычисляем, как быстро будет двигаться фаза синусоиды для этой ноты
+          float freq = midiToFreq(note_event->key);
+          instance->phase_step = freq / instance->sample_rate;
+        }
+
+        // Отпускание клавиши (Note Off)
+        else if (event_header->type == CLAP_EVENT_NOTE_OFF) {
+          const clap_event_note_t* note_event = (const clap_event_note_t*)event_header;
+          // Выключаем звук только если отпустили именно ту ноту, которая сейчас звучит
+          if (note_event->key == instance->active_note) {
+            instance->is_note_on = false;
+          }
+        }
+      }
+
+      event_index++; // Переходим к следующему событию в очереди
+    }
+
+    // 2. ГЕНЕРАЦИЯ ЗВУКА
+    float sample_value = 0.0f;
+
+    if (instance->is_note_on) {
+      // Математика синусоиды: sin(2 * PI * фаза)
+      // Умножаем на 0.2f, чтобы сделать звук потише и не оглушить тебя при тесте
+      sample_value = sinf(2.0f * M_PI * instance->phase) * 0.2f;
+      
+      // Сдвигаем фазу для следующего сэмпла
+      instance->phase += instance->phase_step;
+      
+      // Удерживаем фазу в пределах от 0.0 до 1.0, чтобы избежать переполнения float
+      if (instance->phase >= 1.0f) {
+        instance->phase -= 1.0f;
+      }
+    } else {
+      // Если нота не горит — плавно возвращаем фазу в ноль, чтобы не было щелчков при следующем нажатии
+      instance->phase = 0.0f;
+    }
+
+    // Записываем получившийся сэмпл в левый и правый каналы DAW
+    out_l[frame] = sample_value;
+    out_r[frame] = sample_value;
+  }
+
   return CLAP_PROCESS_CONTINUE; // Говорим DAW, что мы готовы обрабатывать звук дальше
 }
 
