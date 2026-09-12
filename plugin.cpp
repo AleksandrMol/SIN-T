@@ -9,6 +9,7 @@
 #include "clap/factory/plugin-factory.h"
 #include "clap/plugin-features.h"
 #include "clap/version.h"
+#include "tools/console.h"
 
 #include "clap/clap.h"
 
@@ -22,7 +23,7 @@ const char* MY_PLUGIN_ID = "tutorialPlugin.mycompany.helloclap";
 static const clap_plugin_descriptor s_my_plugin_desc = {
   .clap_version = CLAP_VERSION_INIT, // Версия плагина берётся из макроса
   .id = MY_PLUGIN_ID, // ID из константы выше
-  .name = "Tutorial plugin", // Имя плагина 
+  .name = "SIN-T", // Имя плагина
   .vendor = "ChillySwim", // Имя разработчика
   .url = "URL",
   .version = "1.0.0",
@@ -60,6 +61,7 @@ struct MyPluginInstance {
 // Реализация методов плагина
 // Колбэк инициализации конкретного инстанса плагина
 static bool my_plugin_init(const struct clap_plugin *plugin) {
+  console.log("my_plugin_init");
   // Приводим указатель к нашему типу, чтобы получить доступ к стейту
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
   
@@ -69,6 +71,7 @@ static bool my_plugin_init(const struct clap_plugin *plugin) {
 
 // Колбэк деинициализации (деструктор) — вызывается, когда плагин удаляют с дорожки
 static void my_plugin_destroy(const struct clap_plugin *plugin) {
+  console.log("my_plugin_destroy");
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
   
   // Освобождаем память, которую занимает сам объект плагина.
@@ -83,16 +86,24 @@ static bool my_plugin_activate(
   uint32_t min_frames_count,
   uint32_t max_frames_count
 ) {
+  console.log("my_plugin_activate");
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
   instance->sample_rate = (float)sample_rate; // Сохраняем частоту дискретизации
   return true;
 }
 
-static void my_plugin_deactivate(const struct clap_plugin *plugin) {}
+static void my_plugin_deactivate(const struct clap_plugin *plugin) {
+  console.log("my_plugin_deactivate");
+}
 
 // Начинает или останавливает обработку звука (вызывается перед стартом воспроизведения)
-static bool my_plugin_start_processing(const struct clap_plugin *plugin) { return true; }
-static void my_plugin_stop_processing(const struct clap_plugin *plugin) {}
+static bool my_plugin_start_processing(const struct clap_plugin *plugin) {
+  console.log("my_plugin_start_processing");
+  return true;
+}
+static void my_plugin_stop_processing(const struct clap_plugin *plugin) {
+  console.log("my_plugin_stop_processing");
+}
 
 // Сюда DAW будет заходить в аудио-потоке, чтобы плагин обработал звук.
 // Самое «горячее» место в коде (Real-time thread). К нему мы вернемся отдельно.
@@ -180,11 +191,14 @@ static clap_process_status my_plugin_process(
 // Возвращает указатели на расширения (Extensions). CLAP модульный: 
 // поддержка GUI, параметров, MIDI — всё это отдельные расширения. Пока возвращаем NULL.
 static const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char *id) {
+  console.log("my_plugin_get_extension ", id);
   return NULL;
 }
 
 // Вызывается в основном потоке (Main Thread) для фоновых задач плагина
-static void my_plugin_on_main_thread(const struct clap_plugin *plugin) {}
+static void my_plugin_on_main_thread(const struct clap_plugin *plugin) {
+  console.log("my_plugin_on_main_thread");
+}
 // ------------
 
 // ------------
@@ -194,6 +208,7 @@ static void my_plugin_on_main_thread(const struct clap_plugin *plugin) {}
 
 // Возвращает количество плагинов
 static uint32_t plugin_factory_get_plugin_count (const struct clap_plugin_factory *factory) {
+  console.log("plugin_factory_get_plugin_count");
   return 1; // Сейчас у нас один плагин
 };
 
@@ -202,6 +217,7 @@ static const clap_plugin_descriptor* plugin_factory_get_plugin_descriptor (
   const struct clap_plugin_factory *factory,
   uint32_t index
 ) {
+  console.log("plugin_factory_get_plugin_descriptor");
   if (index == 0) {
     return &s_my_plugin_desc; // Возвращаем указатель на наш дескриптор из Шага 4
   }
@@ -211,17 +227,33 @@ static const clap_plugin_descriptor* plugin_factory_get_plugin_descriptor (
 // Самый важный метод: DAW вызывает его, чтобы создать реальный инстанс плагина на дорожке
 static const clap_plugin* plugin_factory_create_plugin(
   const struct clap_plugin_factory *factory,
-  const clap_host_t *host, // Указатель на интерфейс самой DAW (хоста)
+  const clap_host_t *host,
   const char *plugin_id
 ) {
-  // Проверяем, что DAW запрашивает именно наш плагин
-  if (strcmp(plugin_id, MY_PLUGIN_ID) != 0) {
-    return NULL; 
-  }
+  console.log("plugin_factory_create_plugin");
+  if (strcmp(plugin_id, MY_PLUGIN_ID) != 0) return NULL;
 
-  // Пока возвращаем NULL, чтобы код компилировался.
-  return NULL; 
-};
+  MyPluginInstance* instance = (MyPluginInstance*)malloc(sizeof(MyPluginInstance));
+  if (!instance) return NULL;
+  memset(instance, 0, sizeof(MyPluginInstance));
+
+  instance->host = host;
+
+  instance->plugin.desc = &s_my_plugin_desc;
+  instance->plugin.plugin_data = instance;
+  
+  instance->plugin.init = my_plugin_init;
+  instance->plugin.destroy = my_plugin_destroy;
+  instance->plugin.activate = my_plugin_activate;
+  instance->plugin.deactivate = my_plugin_deactivate;
+  instance->plugin.start_processing = my_plugin_start_processing;
+  instance->plugin.stop_processing = my_plugin_stop_processing;
+  instance->plugin.process = my_plugin_process;
+  instance->plugin.get_extension = my_plugin_get_extension;
+  instance->plugin.on_main_thread = my_plugin_on_main_thread;
+
+  return &instance->plugin;
+}
 
 // Шаг 2. собираем функции в структуру фабрики
 static const clap_plugin_factory s_my_plugin_factory = {
@@ -239,6 +271,11 @@ extern "C" const clap_plugin_entry clap_entry = {
     // тут можно инициализировать глобальные ресурсы, если они нужны
     return true;
   },
+  .deinit = []() {
+    // Деинициализация плагина
+    // Эта функция вызывается перед выгрузкой плагина из памяти DAW
+    // Тут стоит освобождать всё, что захватили в init
+  },
   .get_factory = [](const char *factory_id) -> const void* {
     // Проверяем, запрашивает ли DAW стандартную фабрику плагинов
     if (strcmp(factory_id, CLAP_PLUGIN_FACTORY_ID) == 0) {
@@ -246,11 +283,6 @@ extern "C" const clap_plugin_entry clap_entry = {
     }
     return NULL;
   },
-  .deinit = []() {
-    // Деинициализация плагина
-    // Эта функция вызывается перед выгрузкой плагина из памяти DAW
-    // Тут стоит освобождать всё, что захватили в init
-  }
+
 };
 // ------------
-
