@@ -3,6 +3,7 @@
 #include "../clap/plugin-features.h"
 #include "../clap/version.h"
 #include "../clap/clap.h"
+#include "../engine/oscillator/oscillator.h"
 
 // Фабрика плагина
 extern const clap_plugin_factory s_my_plugin_factory;
@@ -24,8 +25,8 @@ struct MyPluginInstance {
 
   bool is_note_on;      // Зажата ли сейчас нота?
   int32_t active_note;  // Номер MIDI ноты (0-127)
-  float phase;          // Текущая фаза осциллятора (от 0.0 до 1.0)
-  float phase_step;     // На сколько сдвигать фазу с каждым сэмплом (зависит от частоты ноты)
+
+  Oscillator oscl;
 };
 
 // Методы CLAP

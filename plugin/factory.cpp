@@ -36,9 +36,9 @@ static const clap_plugin* plugin_factory_create_plugin(
   console.log("plugin_factory_create_plugin");
   if (strcmp(plugin_id, MY_PLUGIN_ID) != 0) return NULL;
 
-  MyPluginInstance* instance = (MyPluginInstance*)malloc(sizeof(MyPluginInstance));
+  MyPluginInstance* instance = new MyPluginInstance{};
+
   if (!instance) return NULL;
-  memset(instance, 0, sizeof(MyPluginInstance));
 
   instance->host = host;
 

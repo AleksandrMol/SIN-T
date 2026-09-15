@@ -4,7 +4,7 @@ CXXFLAGS = -shared -fPIC -O2 -Wall -Wextra -I.
 TARGET = $(HOME)/.clap/sint.clap
 
 # Поиск всех файлов .cpp в проекте автоматически
-SRCS = $(wildcard *.cpp) $(wildcard */*.cpp)
+SRCS := $(shell find . -name '*.cpp')
 
 # Главное правило (вызывается по умолчанию при команде make)
 all: $(TARGET)
