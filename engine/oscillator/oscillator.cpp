@@ -11,7 +11,7 @@ Oscillator::Oscillator() {
   this->currentSample = 0.0f;
 
   this->setPhaseStep();
-  this->setWave(WAVE_TYPE::TNG);
+  this->setWave(WAVE_TYPE::SAW);
 }
 
 /**
@@ -67,6 +67,56 @@ void Oscillator::setPhaseStep() {
 }
 
 /**
+ * Метод коррекции волны для избавления от алиаса
+ */
+float Oscillator::polyBlep(float phase, float phaseStep) {
+  if(phase < phaseStep) {
+    phase /= phaseStep;
+
+    return phase + phase - phase * phase - 1.0f;
+  }
+
+  if (phase > 1.0f - phaseStep) {
+    phase = (phase - 1.0f) / phaseStep;
+
+    return phase * phase + phase + phase + 1.0f;
+  }
+
+  return 0.0f;
+};
+
+/**
+ * Метод вычисления волны пилы
+ */
+float Oscillator::calculateSaw() {
+  float nativeSaw = 2.0f * this->phase - 1.0f;
+
+  float output = nativeSaw - polyBlep(this->phase, this->phaseStep);
+
+  return output;
+}
+
+/**
+ * Метод вычисления волны квадрата
+ */
+float Oscillator::calculateSquare()
+{
+  float value = this->phase < 0.5f ? 1.0f : -1.0f;
+
+  value += polyBlep(this->phase, this->phaseStep);
+
+  float shiftedPhase = this->phase + 0.5f;
+
+  if (shiftedPhase >= 1.0f) {
+    shiftedPhase -= 1.0f;
+  }
+
+  value -= polyBlep(shiftedPhase, this->phaseStep);
+
+  return value;
+}
+
+/**
  * Метод для высчитывания волны
  */
 float Oscillator::calculateWave() {
@@ -74,9 +124,9 @@ float Oscillator::calculateWave() {
     case WAVE_TYPE::SIN:
       return sinf(2.0f * M_PI * this->phase) * this->volume;
     case WAVE_TYPE::SQR:
-      return (this->phase < 0.5f ? 1.0f : -1.0f) * this->volume;
+      return this->calculateSquare() * this->volume;
     case WAVE_TYPE::SAW:
-      return (2.0f * this->phase - 1.0f) * this->volume;
+      return this->calculateSaw() * this->volume;
     case WAVE_TYPE::TNG:
       return (this->phase < 0.5f ? (4.0f * this->phase - 1.0f) : (3.0f - 4.0f * this->phase)) * this->volume;
   }
