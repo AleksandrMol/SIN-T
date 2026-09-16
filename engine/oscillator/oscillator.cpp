@@ -117,7 +117,7 @@ float Oscillator::calculateSquare()
 }
 
 /**
- * Метод для высчитывания волны
+ * Метод для высчитывания волн
  */
 float Oscillator::calculateWave() {
   switch (this->waveType) {

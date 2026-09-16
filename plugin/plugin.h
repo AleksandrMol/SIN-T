@@ -4,6 +4,7 @@
 #include "../clap/version.h"
 #include "../clap/clap.h"
 #include "../engine/oscillator/oscillator.h"
+#include "../engine/envelope/envelope.h"
 
 // Фабрика плагина
 extern const clap_plugin_factory s_my_plugin_factory;
@@ -27,6 +28,7 @@ struct MyPluginInstance {
   int32_t active_note;  // Номер MIDI ноты (0-127)
 
   Oscillator oscl;
+  Envelope env;
 };
 
 // Методы CLAP

@@ -22,7 +22,7 @@ class Oscillator {
     void setSampleRate(float sampleRate);
     void setVolume(float volume);
     void setFreq(float freq);
-    
+
   private:
     WAVE_TYPE waveType;
     float sampleRate;

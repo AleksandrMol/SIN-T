@@ -89,25 +89,31 @@ clap_process_status my_plugin_process(
       }
 
       // Проверяем, что это событие из ядра CLAP (MIDI/Note события)
-      if (event_header->space_id == CLAP_CORE_EVENT_SPACE_ID) {
-        // Нажатие клавиши (Note On)
-        if (event_header->type == CLAP_EVENT_NOTE_ON) {
-          const clap_event_note_t* note_event = (const clap_event_note_t*)event_header;
-          instance->is_note_on = true;
+      if (event_header->type == CLAP_EVENT_NOTE_ON) {
+        const clap_event_note_t* note_event =
+          (const clap_event_note_t*)event_header;
+
+        if (note_event->velocity == 0.0) {
+          // MIDI-style Note On with zero velocity.
+          // Для нашего synth engine трактуем как Note Off.
+          if (note_event->key == instance->active_note) {
+              instance->env.noteOff();
+          }
+        } else {
           instance->active_note = note_event->key;
 
-          // Вычисляем частоту из ноты
           float freq = midiToFreq(note_event->key);
           instance->oscl.setFreq(freq);
-        }
 
-        // Отпускание клавиши (Note Off)
-        else if (event_header->type == CLAP_EVENT_NOTE_OFF) {
-          const clap_event_note_t* note_event = (const clap_event_note_t*)event_header;
-          // Выключаем звук только если отпустили именно ту ноту, которая сейчас звучит
-          if (note_event->key == instance->active_note) {
-            instance->is_note_on = false;
-          }
+          instance->env.noteOn();
+        }
+      }
+      else if (event_header->type == CLAP_EVENT_NOTE_OFF) {
+        const clap_event_note_t* note_event =
+          (const clap_event_note_t*)event_header;
+
+        if (note_event->key == instance->active_note) {
+          instance->env.noteOff();
         }
       }
 
@@ -115,15 +121,14 @@ clap_process_status my_plugin_process(
     }
 
     // 2. ГЕНЕРАЦИЯ ЗВУКА
-    if (instance->is_note_on) {
+    if (instance->env.isSound) {
+      instance->env.doSample();
       instance->oscl.doSample();
-    } else {
-      instance->oscl.stopWave();
     }
 
     // Записываем получившийся сэмпл в левый и правый каналы DAW
-    out_l[frame] = instance->oscl.currentSample;
-    out_r[frame] = instance->oscl.currentSample;
+    out_l[frame] = instance->oscl.currentSample * instance->env.currentValue;
+    out_r[frame] = instance->oscl.currentSample * instance->env.currentValue;
   }
 
   return CLAP_PROCESS_CONTINUE; // Говорим DAW, что мы готовы обрабатывать звук дальше

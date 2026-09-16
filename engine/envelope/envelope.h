@@ -1,4 +1,5 @@
 #include <sys/types.h>
+
 enum class ENV_STAGE {
   IDLE,
   ATTACK,
@@ -10,11 +11,15 @@ class Envelope {
   public:
     Envelope();
     float currentValue;
+    float sustainValue;
+
+    bool isSound;
 
     void noteOn();
     void noteOff();
+    void onStopWave(void(*callback)());
 
-    float doSample();
+    void doSample();
 
     void setSampleRate(float sampleRate);
 
@@ -28,11 +33,16 @@ class Envelope {
     u_int32_t release;
 
     float sampleRate;
+    float samplesPerMillisecond;
 
     float attackStep;
     float releaseStep;
 
     void setAttackStep();
     void setReleaseStep();
+
+    void doAttack();
+    void doSustain();
+    void doRelease();
 
 };
