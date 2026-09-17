@@ -3,8 +3,7 @@
 #include "../clap/plugin-features.h"
 #include "../clap/version.h"
 #include "../clap/clap.h"
-#include "../engine/oscillator/oscillator.h"
-#include "../engine/envelope/envelope.h"
+#include "../engine/generatoir/genetaror.h"
 
 // Фабрика плагина
 extern const clap_plugin_factory s_my_plugin_factory;
@@ -24,11 +23,8 @@ struct MyPluginInstance {
   const clap_host_t* host; // Указатель на DAW
   float sample_rate; // Частота дискретизации
 
-  bool is_note_on;      // Зажата ли сейчас нота?
-  int32_t active_note;  // Номер MIDI ноты (0-127)
 
-  Oscillator oscl;
-  Envelope env;
+  Generator gen;
 };
 
 // Методы CLAP

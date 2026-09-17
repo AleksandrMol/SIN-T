@@ -11,7 +11,6 @@
 
 // Возвращает количество плагинов
 static uint32_t plugin_factory_get_plugin_count (const struct clap_plugin_factory *factory) {
-  console.log("plugin_factory_get_plugin_count");
   return 1; // Сейчас у меня один плагин
 };
 
@@ -20,7 +19,6 @@ static const clap_plugin_descriptor* plugin_factory_get_plugin_descriptor (
   const struct clap_plugin_factory *factory,
   uint32_t index
 ) {
-  console.log("plugin_factory_get_plugin_descriptor");
   if (index == 0) {
     return &s_my_plugin_desc; // Возвращаем указатель на наш дескриптор из Шага 4
   }
@@ -33,7 +31,6 @@ static const clap_plugin* plugin_factory_create_plugin(
   const clap_host_t *host,
   const char *plugin_id
 ) {
-  console.log("plugin_factory_create_plugin");
   if (strcmp(plugin_id, MY_PLUGIN_ID) != 0) return NULL;
 
   MyPluginInstance* instance = new MyPluginInstance{};

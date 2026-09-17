@@ -20,7 +20,6 @@ Envelope::Envelope() {
  * Метод нажатия клавиши
 */
 void Envelope::noteOn() {
-  console.log("noteOn");
   this->isSound=true;
   this->stage = ENV_STAGE::ATTACK;
 };
@@ -29,7 +28,6 @@ void Envelope::noteOn() {
  * Метод отпускания клавиши
  */
 void Envelope::noteOff() {
-  console.log("noteOff");
   this->stage = ENV_STAGE::RELEASE;
 };
 
@@ -55,7 +53,6 @@ void Envelope::doRelease() {
     this->currentValue = 0.0f;
     this->isSound = false;
     this->stage = ENV_STAGE::IDLE;
-    console.log("end ", this->currentValue);
   }
 };
 

@@ -11,7 +11,7 @@ Oscillator::Oscillator() {
   this->currentSample = 0.0f;
 
   this->setPhaseStep();
-  this->setWave(WAVE_TYPE::SAW);
+  this->setWave(WAVE_TYPE::SQR);
 }
 
 /**

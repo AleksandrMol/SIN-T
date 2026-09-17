@@ -8,12 +8,10 @@
 #include "../clap/plugin.h"
 
 #include "../tools/console.h"
-#include "../tools/tools.h"
 #include "./plugin.h"
 
 // Колбэк инициализации конкретного инстанса плагина
 bool my_plugin_init(const struct clap_plugin *plugin) {
-  console.log("my_plugin_init");
   // Приводим указатель к нашему типу, чтобы получить доступ к стейту
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
@@ -23,7 +21,6 @@ bool my_plugin_init(const struct clap_plugin *plugin) {
 
 // Колбэк деинициализации (деструктор) — вызывается, когда плагин удаляют с дорожки
 void my_plugin_destroy(const struct clap_plugin *plugin) {
-  console.log("my_plugin_destroy");
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
   // Освобождаем память, которую занимает сам объект плагина.
@@ -37,27 +34,21 @@ bool my_plugin_activate(
   uint32_t min_frames_count,
   uint32_t max_frames_count
 ) {
-  console.log("my_plugin_activate");
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
   instance->sample_rate = (float)sample_rate; // Сохраняем частоту дискретизации
-  instance->oscl.setSampleRate((float)sample_rate);
+  instance->gen.setSampleRate((float)sample_rate);
 
   return true;
 }
 
-void my_plugin_deactivate(const struct clap_plugin *plugin) {
-  console.log("my_plugin_deactivate");
-}
+void my_plugin_deactivate(const struct clap_plugin *plugin) {}
 
 // Начинает или останавливает обработку звука (вызывается перед стартом воспроизведения)
 bool my_plugin_start_processing(const struct clap_plugin *plugin) {
-  console.log("my_plugin_start_processing");
   return true;
 }
-void my_plugin_stop_processing(const struct clap_plugin *plugin) {
-  console.log("my_plugin_stop_processing");
-}
+void my_plugin_stop_processing(const struct clap_plugin *plugin) {}
 
 // Сюда DAW будет заходить в аудио-потоке, чтобы плагин обработал звук.
 // Самое «горячее» место в коде (Real-time thread). К нему мы вернемся отдельно.
@@ -94,41 +85,27 @@ clap_process_status my_plugin_process(
           (const clap_event_note_t*)event_header;
 
         if (note_event->velocity == 0.0) {
-          // MIDI-style Note On with zero velocity.
-          // Для нашего synth engine трактуем как Note Off.
-          if (note_event->key == instance->active_note) {
-              instance->env.noteOff();
-          }
+          instance->gen.noteOff(note_event->key);
         } else {
-          instance->active_note = note_event->key;
-
-          float freq = midiToFreq(note_event->key);
-          instance->oscl.setFreq(freq);
-
-          instance->env.noteOn();
+          console.log("note_event->key_", note_event->key);
+          instance->gen.noteOn(note_event->key);
         }
       }
       else if (event_header->type == CLAP_EVENT_NOTE_OFF) {
         const clap_event_note_t* note_event =
           (const clap_event_note_t*)event_header;
 
-        if (note_event->key == instance->active_note) {
-          instance->env.noteOff();
-        }
+          instance->gen.noteOff(note_event->key);
       }
 
       event_index++; // Переходим к следующему событию в очереди
     }
 
-    // 2. ГЕНЕРАЦИЯ ЗВУКА
-    if (instance->env.isSound) {
-      instance->env.doSample();
-      instance->oscl.doSample();
-    }
+    instance->gen.process();
 
     // Записываем получившийся сэмпл в левый и правый каналы DAW
-    out_l[frame] = instance->oscl.currentSample * instance->env.currentValue;
-    out_r[frame] = instance->oscl.currentSample * instance->env.currentValue;
+    out_l[frame] = instance->gen.getOutput();
+    out_r[frame] = instance->gen.getOutput();
   }
 
   return CLAP_PROCESS_CONTINUE; // Говорим DAW, что мы готовы обрабатывать звук дальше
@@ -137,11 +114,8 @@ clap_process_status my_plugin_process(
 // Возвращает указатели на расширения (Extensions). CLAP модульный: 
 // поддержка GUI, параметров, MIDI — всё это отдельные расширения. Пока возвращаем NULL.
 const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char *id) {
-  console.log("my_plugin_get_extension ", id);
   return NULL;
 }
 
 // Вызывается в основном потоке (Main Thread) для фоновых задач плагина
-void my_plugin_on_main_thread(const struct clap_plugin *plugin) {
-  console.log("my_plugin_on_main_thread");
-}
+void my_plugin_on_main_thread(const struct clap_plugin *plugin) {}
