@@ -1,5 +1,4 @@
 #include "./genetaror.h"
-#include "../../tools/console.h"
 #include <cstdint>
 
 Generator::Generator() {
@@ -14,7 +13,7 @@ void Generator::setMaxVoice(uint16_t count) {
 
 void Generator::noteOn(int16_t key) {
   for (uint16_t i = 0; i < maxVoice; i++) {
-    if (!voices[i].getActive()) {
+    if (!voices[i].getActive() && !voices[i].getEnv().isSound) {
       voices[i].setKey(key);
       voices[i].setActive(true);
       return;

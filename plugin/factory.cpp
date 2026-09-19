@@ -2,7 +2,6 @@
 
 #include "../clap/plugin.h"
 #include "../clap/factory/plugin-factory.h"
-#include "../tools/console.h"
 
 #include "./plugin.h"
 

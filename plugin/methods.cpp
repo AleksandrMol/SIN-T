@@ -7,7 +7,6 @@
 
 #include "../clap/plugin.h"
 
-#include "../tools/console.h"
 #include "./plugin.h"
 
 // Колбэк инициализации конкретного инстанса плагина
@@ -87,7 +86,6 @@ clap_process_status my_plugin_process(
         if (note_event->velocity == 0.0) {
           instance->gen.noteOff(note_event->key);
         } else {
-          console.log("note_event->key_", note_event->key);
           instance->gen.noteOn(note_event->key);
         }
       }

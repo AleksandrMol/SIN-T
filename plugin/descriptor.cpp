@@ -1,5 +1,4 @@
 #include "../clap/plugin.h"
-#include "../tools/console.h"
 
 #include "./plugin.h"
 

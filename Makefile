@@ -1,6 +1,6 @@
 # Переменные настроек
 CXX = g++
-CXXFLAGS = -shared -fPIC -O2 -Wall -Wextra -I.
+CXXFLAGS = -shared -fPIC -O0 -g -Wall -Wextra -I.
 TARGET = $(HOME)/.clap/sint.clap
 
 # Поиск всех файлов .cpp в проекте автоматически

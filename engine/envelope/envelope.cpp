@@ -1,5 +1,4 @@
 #include "./envelope.h"
-#include "../../tools/console.h"
 
 Envelope::Envelope() {
   this->stage = ENV_STAGE::IDLE;
@@ -7,7 +6,7 @@ Envelope::Envelope() {
   this->sustainValue = 1.0f;
 
   this->attack = 5;
-  this->release = 1000;
+  this->release = 650;
 
   this->isSound=false;
 

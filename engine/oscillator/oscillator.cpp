@@ -1,17 +1,16 @@
 #include "./oscillator.h"
-#include "../../tools/console.h"
 
 #include <cmath>
 
 Oscillator::Oscillator() {
   this->sampleRate = 44100.0f;
   this->freq = 440.0f;
-  this->volume = 0.75f;
+  this->volume = 0.1f;
   this->phase = 0.0f;
   this->currentSample = 0.0f;
 
   this->setPhaseStep();
-  this->setWave(WAVE_TYPE::SQR);
+  this->setWave(WAVE_TYPE::SIN);
 }
 
 /**
