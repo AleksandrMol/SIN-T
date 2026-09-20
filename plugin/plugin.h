@@ -31,7 +31,6 @@ struct MyPluginInstance {
 
 // Методы CLAP
 bool my_plugin_init(const struct clap_plugin *plugin);
-const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char *id);
 bool my_plugin_activate(
   const struct clap_plugin *plugin,
   double sample_rate,
@@ -47,10 +46,14 @@ clap_process_status my_plugin_process(
   const clap_process_t *process
 );
 void my_plugin_destroy(const struct clap_plugin *plugin);
-
 void my_plugin_on_main_thread(const struct clap_plugin *plugin);
 
+// EXT-S
 extern const clap_plugin_audio_ports_t s_my_plug_audio_ports;
 extern const clap_plugin_note_ports_t s_my_plug_note_ports;
 extern const clap_plugin_latency_t s_my_plug_latency;
 extern const clap_plugin_state_t s_my_plug_state;
+const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char *id);
+
+// EVENTS
+void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t *event_header);

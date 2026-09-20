@@ -106,6 +106,7 @@ const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char
     return &s_my_plug_audio_ports;
   if (!strcmp(id, CLAP_EXT_NOTE_PORTS))
     return &s_my_plug_note_ports;
+
   // if (!strcmp(id, CLAP_EXT_LATENCY))
   //   return &s_my_plug_latency;
   // if (!strcmp(id, CLAP_EXT_STATE))
