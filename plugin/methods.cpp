@@ -1,11 +1,9 @@
-#include <cstddef>
-#include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <assert.h>
 #include <math.h>
 
 #include "../clap/plugin.h"
+#include "../tools/console.h"
 
 #include "./plugin.h"
 
@@ -43,6 +41,8 @@ bool my_plugin_activate(
 
 void my_plugin_deactivate(const struct clap_plugin *plugin) {}
 
+void my_plug_reset(const struct clap_plugin *plugin) {}
+
 // Начинает или останавливает обработку звука (вызывается перед стартом воспроизведения)
 bool my_plugin_start_processing(const struct clap_plugin *plugin) {
   return true;
@@ -61,9 +61,25 @@ clap_process_status my_plugin_process(
   const uint32_t num_events = process->in_events->size(process->in_events);
   uint32_t event_index = 0;
 
-  // Получаем указатели на левый (0) и правый (1) аудио-каналы DAW
+  // 1. Проверяем, что вообще есть выходные аудио-шины
+  if (process->audio_outputs_count < 1) {
+    return CLAP_PROCESS_CONTINUE;
+  }
+
+  // 2. Проверяем, что массив указателей на каналы существует
+  if (!process->audio_outputs[0].data32) {
+    return CLAP_PROCESS_CONTINUE; 
+  }
+
+  // 3. Безопасно получаем указатели на левый и правый каналы
   float* out_l = process->audio_outputs[0].data32[0];
   float* out_r = process->audio_outputs[0].data32[1];
+
+  // 4. Проверяем каждый канал отдельно перед обработкой
+  // (Если хост по какой-то причине дал только один канал или сбросил указатели)
+  if (!out_l || !out_r) {
+    return CLAP_PROCESS_CONTINUE;
+  }
 
   // Цикл по каждому сэмплу в текущем аудио-блоке
   for (uint32_t frame = 0; frame < total_frames; ++frame) {
@@ -107,12 +123,6 @@ clap_process_status my_plugin_process(
   }
 
   return CLAP_PROCESS_CONTINUE; // Говорим DAW, что мы готовы обрабатывать звук дальше
-}
-
-// Возвращает указатели на расширения (Extensions). CLAP модульный: 
-// поддержка GUI, параметров, MIDI — всё это отдельные расширения. Пока возвращаем NULL.
-const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char *id) {
-  return NULL;
 }
 
 // Вызывается в основном потоке (Main Thread) для фоновых задач плагина

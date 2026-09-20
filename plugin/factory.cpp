@@ -47,6 +47,7 @@ static const clap_plugin* plugin_factory_create_plugin(
   instance->plugin.deactivate = my_plugin_deactivate;
   instance->plugin.start_processing = my_plugin_start_processing;
   instance->plugin.stop_processing = my_plugin_stop_processing;
+  instance->plugin.reset = my_plug_reset;
   instance->plugin.process = my_plugin_process;
   instance->plugin.get_extension = my_plugin_get_extension;
   instance->plugin.on_main_thread = my_plugin_on_main_thread;

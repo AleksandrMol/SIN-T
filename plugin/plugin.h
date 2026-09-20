@@ -21,8 +21,10 @@ struct MyPluginInstance {
 
   // Далее можно указывать любые свои собственные переменные
   const clap_host_t* host; // Указатель на DAW
-  float sample_rate; // Частота дискретизации
 
+  uint32_t latency;
+
+  float sample_rate; // Частота дискретизации
 
   Generator gen;
 };
@@ -39,6 +41,7 @@ bool my_plugin_activate(
 bool my_plugin_start_processing(const struct clap_plugin *plugin);
 void my_plugin_stop_processing(const struct clap_plugin *plugin);
 void my_plugin_deactivate(const struct clap_plugin *plugin);
+void my_plug_reset(const struct clap_plugin *plugin);
 clap_process_status my_plugin_process(
   const struct clap_plugin *plugin, 
   const clap_process_t *process
@@ -46,3 +49,8 @@ clap_process_status my_plugin_process(
 void my_plugin_destroy(const struct clap_plugin *plugin);
 
 void my_plugin_on_main_thread(const struct clap_plugin *plugin);
+
+extern const clap_plugin_audio_ports_t s_my_plug_audio_ports;
+extern const clap_plugin_note_ports_t s_my_plug_note_ports;
+extern const clap_plugin_latency_t s_my_plug_latency;
+extern const clap_plugin_state_t s_my_plug_state;
