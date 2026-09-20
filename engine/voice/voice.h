@@ -9,6 +9,7 @@ class Voice {
     int16_t getKey();
     void setActive(bool isActive);
     bool getActive();
+    bool getPlaying();
     Envelope& getEnv();
     Oscillator& getOsc();
     void process();
@@ -21,5 +22,9 @@ class Voice {
     Envelope env;
 
     bool isActive;
+    bool isPlaying;
+
     int16_t key;
+
+    void setIsPlaying(bool isPlaying);
 };

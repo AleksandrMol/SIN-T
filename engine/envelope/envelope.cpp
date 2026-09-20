@@ -6,9 +6,7 @@ Envelope::Envelope() {
   this->sustainValue = 1.0f;
 
   this->attack = 5;
-  this->release = 650;
-
-  this->isSound=false;
+  this->release = 2000;
 
   this->setSampleRate(44100);
   this->setAttackStep();
@@ -19,7 +17,6 @@ Envelope::Envelope() {
  * Метод нажатия клавиши
 */
 void Envelope::noteOn() {
-  this->isSound=true;
   this->stage = ENV_STAGE::ATTACK;
 };
 
@@ -29,10 +26,6 @@ void Envelope::noteOn() {
 void Envelope::noteOff() {
   this->stage = ENV_STAGE::RELEASE;
 };
-
-void Envelope::onStopWave(void(*callback)()) {
-  callback();
-}
 
 void Envelope::doAttack() {
   this->currentValue += this->attackStep;
@@ -50,8 +43,10 @@ void Envelope::doRelease() {
 
   if (this->currentValue <= 0.0f) {
     this->currentValue = 0.0f;
-    this->isSound = false;
     this->stage = ENV_STAGE::IDLE;
+    if(this->onEnd) {
+      this->onEnd();
+    }
   }
 };
 

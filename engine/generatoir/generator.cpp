@@ -13,7 +13,7 @@ void Generator::setMaxVoice(uint16_t count) {
 
 void Generator::noteOn(int16_t key) {
   for (uint16_t i = 0; i < maxVoice; i++) {
-    if (!voices[i].getActive() && !voices[i].getEnv().isSound) {
+    if (!voices[i].getPlaying()) {
       voices[i].setKey(key);
       voices[i].setActive(true);
       return;
@@ -23,8 +23,9 @@ void Generator::noteOn(int16_t key) {
 
 void Generator::noteOff(int16_t key) {
   for (uint16_t i = 0; i < maxVoice; i++) {
-    if(this->voices[i].getKey() == key) {
+    if(this->voices[i].getKey() == key && this->voices[i].getActive()) {
       this->voices[i].setActive(false);
+      return;
     }
   }
 };
@@ -46,7 +47,7 @@ void Generator::process() {
   output = 0.0f;
 
   for (uint16_t i = 0; i < maxVoice; i++) {
-    if (this->voices[i].getEnv().isSound) {
+    if (this->voices[i].getPlaying()) {
       voices[i].process();
       output += voices[i].getOutput();
     }

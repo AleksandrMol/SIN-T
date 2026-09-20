@@ -3,8 +3,21 @@
 
 Voice::Voice() {
   this->isActive = false;
+  this->isPlaying = false;
   key = 0;
+
+  this->env.onEnd = [this]() {
+    this->setIsPlaying(false);
+  };
 };
+
+void Voice::setIsPlaying(bool isPlaying) {
+  this->isPlaying = isPlaying;
+}
+
+bool Voice::getPlaying() {
+  return this->isPlaying;
+}
 
 void Voice::setKey(int16_t key) {
   this->key = key;
@@ -20,6 +33,7 @@ void Voice::setActive(bool isActive) {
 
   if(isActive) {
     this->env.noteOn();
+    this->setIsPlaying(true);
   } else {
     this->env.noteOff();
   }
@@ -44,7 +58,7 @@ float Voice::getOutput() {
 void Voice::process() {
   this->output = 0.0;
 
-  if (this->env.isSound) {
+  if (this->isPlaying) {
     this->env.doSample();
     this->osc.doSample();
 

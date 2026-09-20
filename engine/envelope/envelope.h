@@ -1,3 +1,4 @@
+#include <functional>
 #include <sys/types.h>
 
 enum class ENV_STAGE {
@@ -13,11 +14,9 @@ class Envelope {
     float currentValue;
     float sustainValue;
 
-    bool isSound;
-
     void noteOn();
     void noteOff();
-    void onStopWave(void(*callback)());
+    std::function<void()> onEnd;
 
     void doSample();
 
