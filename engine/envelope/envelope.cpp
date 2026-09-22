@@ -1,4 +1,5 @@
 #include "./envelope.h"
+#include <cstdint>
 
 Envelope::Envelope() {
   this->stage = ENV_STAGE::IDLE;
@@ -74,7 +75,7 @@ void Envelope::setSampleRate(float sampleRate) {
 /**
  * Установить время атаки
  */
-void Envelope::setAttack(u_int32_t ms) {
+void Envelope::setAttack(uint32_t ms) {
   this->attack = ms;
   this->setAttackStep();
 };
@@ -82,7 +83,7 @@ void Envelope::setAttack(u_int32_t ms) {
 /**
  * Установить время релиза
  */
-void Envelope::setRelease(u_int32_t ms) {
+void Envelope::setRelease(uint32_t ms) {
   this->release = ms;
   this->setReleaseStep();
 };

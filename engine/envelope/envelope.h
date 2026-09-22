@@ -1,5 +1,7 @@
+#include <cstdint>
 #include <functional>
 #include <sys/types.h>
+#include "../modulation/modulation.h"
 
 enum class ENV_STAGE {
   IDLE,
@@ -22,14 +24,14 @@ class Envelope {
 
     void setSampleRate(float sampleRate);
 
-    void setAttack(u_int32_t seconds);
-    void setRelease(u_int32_t seconds);
+    void setAttack(uint32_t ml);
+    void setRelease(uint32_t ml);
 
   private:
     ENV_STAGE stage;
 
-    u_int32_t attack;
-    u_int32_t release;
+    uint32_t attack;
+    uint32_t release;
 
     float sampleRate;
     float samplesPerMillisecond;
