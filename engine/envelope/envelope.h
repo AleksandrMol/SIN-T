@@ -6,44 +6,26 @@
 enum class ENV_STAGE {
   IDLE,
   ATTACK,
+  DECAY,
   SUSTAIN,
   RELEASE
 };
 
-class Envelope {
+struct env_node_t : node_t {
+  ENV_STAGE stage;
+};
+
+class Envelope : public Modulation<env_node_t> {
   public:
     Envelope();
-    float currentValue;
-    float sustainValue;
 
-    void noteOn();
-    void noteOff();
+    void noteOn() override;
+    void noteOff() override;
     std::function<void()> onEnd;
 
-    void doSample();
-
-    void setSampleRate(float sampleRate);
-
-    void setAttack(uint32_t ml);
-    void setRelease(uint32_t ml);
+    void doSample() override;
 
   private:
-    ENV_STAGE stage;
-
-    uint32_t attack;
-    uint32_t release;
-
-    float sampleRate;
-    float samplesPerMillisecond;
-
-    float attackStep;
-    float releaseStep;
-
-    void setAttackStep();
-    void setReleaseStep();
-
     void doAttack();
-    void doSustain();
     void doRelease();
-
 };

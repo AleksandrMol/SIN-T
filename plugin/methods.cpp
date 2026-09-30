@@ -3,8 +3,6 @@
 #include <math.h>
 
 #include "../clap/plugin.h"
-#include "../tools/console.h"
-
 #include "./plugin.h"
 
 // Колбэк инициализации конкретного инстанса плагина

@@ -13,6 +13,8 @@ Voice::Voice() {
 
 void Voice::setIsPlaying(bool isPlaying) {
   this->isPlaying = isPlaying;
+
+  console.log("setIsPlaying ", isPlaying);
 }
 
 bool Voice::getPlaying() {
