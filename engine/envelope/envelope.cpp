@@ -1,50 +1,36 @@
 #include "./envelope.h"
-#include <cstdint>
 
 Envelope::Envelope() {
-  this->stage = ENV_STAGE::IDLE;
-  this->currentValue = 0.0f;
-  this->sustainValue = 1.0f;
+  this->setNodes({
+    {1,    0.0f, ENV_STAGE::IDLE},
+    {5,    1.0f, ENV_STAGE::ATTACK},
+    {4000, 0.01f, ENV_STAGE::DECAY},
+    {1,    0.01f, ENV_STAGE::SUSTAIN},
+    {1200,  0.0f, ENV_STAGE::RELEASE},
+    {1,    0.0f, ENV_STAGE::IDLE},
+  });
 
-  this->attack = 5;
-  this->release = 2000;
-
-  this->setSampleRate(44100);
-  this->setAttackStep();
-  this->setReleaseStep();
-};
+  this->setSampleRate(44100.0f);
+  this->reset(0);
+}
 
 /**
  * Метод нажатия клавиши
-*/
+ */
 void Envelope::noteOn() {
-  this->stage = ENV_STAGE::ATTACK;
+  this->reset(0);
 };
 
 /**
  * Метод отпускания клавиши
  */
 void Envelope::noteOff() {
-  this->stage = ENV_STAGE::RELEASE;
+  this->reset(3);
 };
-
-void Envelope::doAttack() {
-  this->currentValue += this->attackStep;
-
-  if (this->currentValue >= this->sustainValue) {
-    this->currentValue = this->sustainValue;
-    this->stage = ENV_STAGE::SUSTAIN;
-  }
-};
-
-void Envelope::doSustain() {};
 
 void Envelope::doRelease() {
-  this->currentValue -= this->releaseStep;
-
   if (this->currentValue <= 0.0f) {
     this->currentValue = 0.0f;
-    this->stage = ENV_STAGE::IDLE;
     if(this->onEnd) {
       this->onEnd();
     }
@@ -52,52 +38,26 @@ void Envelope::doRelease() {
 };
 
 void Envelope::doSample() {
-  switch (this->stage) {
-    case ENV_STAGE::IDLE:
-      return;
-    case ENV_STAGE::ATTACK:
-      this->doAttack();
-      return;
-    case ENV_STAGE::SUSTAIN:
-      this->doSustain();
-      return;
-    case ENV_STAGE::RELEASE:
-      this->doRelease();
-      return;
+  auto* nextNode = this->getNextNode();
+
+  if (!nextNode) {
+    return;
   }
-};
 
-void Envelope::setSampleRate(float sampleRate) {
-  this->sampleRate = sampleRate;
-  this->samplesPerMillisecond = sampleRate / 1000;
-};
-
-/**
- * Установить время атаки
- */
-void Envelope::setAttack(uint32_t ms) {
-  this->attack = ms;
-  this->setAttackStep();
-};
-
-/**
- * Установить время релиза
- */
-void Envelope::setRelease(uint32_t ms) {
-  this->release = ms;
-  this->setReleaseStep();
-};
-
-/**
- * Шаг изменения громкости во время атаки
- */
-void Envelope::setAttackStep() {
-  this->attackStep = this->sustainValue / (this->samplesPerMillisecond * this->attack);
-};
-
-/**
- * Шаг изменения громкости во время релиза
- */
-void Envelope::setReleaseStep() {
-  this->releaseStep = this->sustainValue / (this->samplesPerMillisecond * this->release);
-};
+  switch (nextNode->stage) {
+    case ENV_STAGE::ATTACK:
+      this->process();
+      break;
+    case ENV_STAGE::DECAY:
+      this->process();
+      break;
+    case ENV_STAGE::RELEASE:
+      this->process();
+      this->doRelease();
+      break;
+    case ENV_STAGE::SUSTAIN:
+      break;
+    case ENV_STAGE::IDLE:
+      break;
+  }
+}

@@ -1,5 +1,6 @@
 #include "../voice/voice.h"
 #include <cstdint>
+#include <sys/types.h>
 #include <vector>
 
 class Generator {

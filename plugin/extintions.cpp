@@ -1,4 +1,3 @@
-#include "../tools/console.h"
 #include <cstdio>
 #include "./plugin.h"
 #include <cstring>
