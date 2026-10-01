@@ -1,4 +1,4 @@
-#include "./genetaror.h"
+#include "./generator.h"
 #include <cstdint>
 
 Generator::Generator() {

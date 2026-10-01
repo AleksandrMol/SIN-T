@@ -1,7 +1,7 @@
+#include <concepts>
 #include <cstdint>
 #include <functional>
 #include <vector>
-#include <concepts>
 
 #include "../../tools/console.h"
 
@@ -11,102 +11,106 @@ enum class MOD_STAGE {
 };
 
 struct node_t {
-  uint32_t time;
+  uint32_t duration;
   float value;
 };
 
-template<typename T = node_t>
+template <typename T = node_t>
   requires std::derived_from<T, node_t>
 class Modulation {
 
-  public:
-    Modulation() {
-      this->currentValue = 0.0f;
+public:
+  float currentValue = 0.0f;
+  std::function<void()> onEnd;
 
-      this->nodeIndex = 0;
-      this->nodeStep = 0;
-      this->nodeTime = 0;
-    };
+  virtual ~Modulation() = default;
 
-    float currentValue;
-    std::function<void()> onEnd;
+  virtual void noteOn() = 0;
+  virtual void noteOff() = 0;
+  virtual void doSample() = 0;
 
-    virtual void noteOn() = 0;
-    virtual void noteOff() = 0;
+  void setSampleRate(float sampleRate) {
+    this->sampleRate = sampleRate;
+    this->samplesPerMillisecond = sampleRate / 1000.0f;
+  }
 
-    virtual void doSample() = 0;
+  float getSamplesPerMillisecond() const {
+    return this->samplesPerMillisecond;
+  }
 
-    void setSampleRate(float sampleRate) {
-      this->sampleRate = sampleRate;
-      this->samplesPerMillisecond = sampleRate / 1000;
-    };
-    float getSamplesPerMillisecond() {
-      return this->samplesPerMillisecond;
-    };
+protected:
+  std::vector<T> nodes;
 
-  protected:
-    std::vector<T> nodes;
+  uint32_t nodeIndex = 0;
+  float nodeTime = 0.0f;
+  float nodeStep = 0.0f;
 
-    T* currentNode;
-    T* nextNode;
+  float sampleRate = 44100.0f;
+  float samplesPerMillisecond = 44.1f;
 
-    uint32_t nodeIndex;
-    float nodeStep;
-    float nodeTime;
+  void setNodes(std::vector<T> nodes) {
+    this->nodes = std::move(nodes);
+  }
 
-    float sampleRate;
-    float samplesPerMillisecond;
+  T *getCurrentNode() {
+    if (this->nodeIndex >= this->nodes.size()) {
+      return nullptr;
+    }
 
-    void setStep() {
-      if (this->nodeIndex >= this->nodes.size()) {
-        this->nodeStep = 0;
+    return &this->nodes[this->nodeIndex];
+  }
+
+  T *getNextNode() {
+    if (this->nodeIndex + 1 >= this->nodes.size()) {
+      return nullptr;
+    }
+
+    return &this->nodes[this->nodeIndex + 1];
+  }
+
+  void calculateStep() {
+    T *nextNode = getNextNode();
+
+    if (!nextNode || nextNode->duration == 0) {
+      this->nodeStep = 0.0f;
+      return;
+    }
+
+    const float duration = this->samplesPerMillisecond * nextNode->duration;
+
+    this->nodeStep = (nextNode->value - currentValue) / duration;
+  }
+
+  void process() {
+    T *nextNode = this->getNextNode();
+
+    if (!nextNode) {
         return;
-      }
+    }
 
-      console.log("this->nodeIndex ", this->nodeIndex);
-      // console.log("this->nodes.size() ", this->nodes.size());
-      // console.log("this->currentValue ", this->currentValue);
-      console.log("this->nextNode->value ", this->nextNode->value);
-      // console.log("this->samplesPerMillisecond ", this->samplesPerMillisecond);
-      // console.log("this->nextNode->time ", this->nextNode->time);
-      const float step = -1 * ((this->currentValue-this->nextNode->value) / (this->samplesPerMillisecond * this->nextNode->time));
-      console.log("STEP ", step);
-      this->nodeStep = step;
-    };
+    this->currentValue += this->nodeStep;
+    this->nodeTime += 1 / this->samplesPerMillisecond;
 
-    void process() {
-      this->currentValue += this->nodeStep;
-      this->nodeTime += 1/this->samplesPerMillisecond;
+    if (this->nodeTime >= nextNode->duration) {
+      this->currentValue = nextNode->value;
 
-      if (this->nodeTime >= this->nextNode->time) {
-        this->currentValue = this->nextNode->value;
-        this->nodeIndex ++;
-        this->setCurrentNode();
-        this->setNextNode();
-        this->setStep();
-      }
-    };
+      this->reset(this->nodeIndex + 1);
+    }
+  };
 
-    void setNodes(std::vector<T> nodes) {
-      this->nodes = nodes;
-    };
-    std::vector<T>* getNodes() {
-      return &this->nodes;
-    };
+  std::vector<T> *getNodes() { 
+    return &this->nodes;
+  };
 
-    void setCurrentNode() {
-      this->nodeTime = 0;
-      this->currentNode = &this->nodes.at(this->nodeIndex);
-    };
-    T* getCurrentNode() {
-      return this->currentNode;
-    };
+  void reset(uint32_t index = 0) {
+    this->nodeIndex = index;
+    this->nodeTime = 0.0f;
 
-    void setNextNode() {
-      this->nextNode = &this->nodes.at(this->nodeIndex + 1);
-    };
-    T* getNextNode() {
-      return this->nextNode;
-    };
+    if (this->nodeIndex >= this->nodes.size()) {
+      this->nodeStep = 0.0f;
+      return;
+    }
 
+    calculateStep();
+  }
 };
