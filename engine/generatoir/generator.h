@@ -1,3 +1,4 @@
+#pragma once
 #include "../voice/voice.h"
 #include <cstdint>
 #include <sys/types.h>

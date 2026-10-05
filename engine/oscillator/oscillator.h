@@ -1,3 +1,4 @@
+#pragma once
 
 enum class WAVE_TYPE {
   SIN = 1,

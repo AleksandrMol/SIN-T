@@ -4,7 +4,7 @@ Envelope::Envelope() {
   this->setNodes({
     {1,    0.0f, ENV_STAGE::IDLE},
     {5,    1.0f, ENV_STAGE::ATTACK},
-    {4000, 0.01f, ENV_STAGE::DECAY},
+    {4000, 1.0f, ENV_STAGE::DECAY},
     {1,    0.01f, ENV_STAGE::SUSTAIN},
     {1200,  0.0f, ENV_STAGE::RELEASE},
     {1,    0.0f, ENV_STAGE::IDLE},

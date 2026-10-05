@@ -34,8 +34,7 @@ void Generator::setSampleRate(float sampleRate) {
   this->sampleRate = sampleRate;
 
   for(int16_t i = 0; i < maxVoice; i++) {
-    this->voices[i].getOsc().setSampleRate(sampleRate);
-    this->voices[i].getEnv().setSampleRate(sampleRate);
+    this->voices[i].setSampleRate(sampleRate);
   }
 };
 

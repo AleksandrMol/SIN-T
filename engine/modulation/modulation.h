@@ -1,9 +1,8 @@
+#pragma once
 #include <concepts>
 #include <cstdint>
 #include <functional>
 #include <vector>
-
-#include "../../tools/console.h"
 
 enum class MOD_STAGE {
   STOP,
@@ -18,99 +17,98 @@ struct node_t {
 template <typename T = node_t>
   requires std::derived_from<T, node_t>
 class Modulation {
+  public:
+    float currentValue = 0.0f;
+    std::function<void()> onEnd;
 
-public:
-  float currentValue = 0.0f;
-  std::function<void()> onEnd;
+    virtual ~Modulation() = default;
 
-  virtual ~Modulation() = default;
+    virtual void noteOn() = 0;
+    virtual void noteOff() = 0;
+    virtual void doSample() = 0;
 
-  virtual void noteOn() = 0;
-  virtual void noteOff() = 0;
-  virtual void doSample() = 0;
-
-  void setSampleRate(float sampleRate) {
-    this->sampleRate = sampleRate;
-    this->samplesPerMillisecond = sampleRate / 1000.0f;
-  }
-
-  float getSamplesPerMillisecond() const {
-    return this->samplesPerMillisecond;
-  }
-
-protected:
-  std::vector<T> nodes;
-
-  uint32_t nodeIndex = 0;
-  float nodeTime = 0.0f;
-  float nodeStep = 0.0f;
-
-  float sampleRate = 44100.0f;
-  float samplesPerMillisecond = 44.1f;
-
-  void setNodes(std::vector<T> nodes) {
-    this->nodes = std::move(nodes);
-  }
-
-  T *getCurrentNode() {
-    if (this->nodeIndex >= this->nodes.size()) {
-      return nullptr;
+    void setSampleRate(float sampleRate) {
+      this->sampleRate = sampleRate;
+      this->samplesPerMillisecond = sampleRate / 1000.0f;
     }
 
-    return &this->nodes[this->nodeIndex];
-  }
-
-  T *getNextNode() {
-    if (this->nodeIndex + 1 >= this->nodes.size()) {
-      return nullptr;
+    float getSamplesPerMillisecond() const {
+      return this->samplesPerMillisecond;
     }
 
-    return &this->nodes[this->nodeIndex + 1];
-  }
+  protected:
+    std::vector<T> nodes;
 
-  void calculateStep() {
-    T *nextNode = getNextNode();
+    uint32_t nodeIndex = 0;
+    float nodeTime = 0.0f;
+    float nodeStep = 0.0f;
 
-    if (!nextNode || nextNode->duration == 0) {
-      this->nodeStep = 0.0f;
-      return;
+    float sampleRate = 44100.0f;
+    float samplesPerMillisecond = 44.1f;
+
+    void setNodes(std::vector<T> nodes) {
+      this->nodes = std::move(nodes);
     }
 
-    const float duration = this->samplesPerMillisecond * nextNode->duration;
+    T *getCurrentNode() {
+      if (this->nodeIndex >= this->nodes.size()) {
+        return nullptr;
+      }
 
-    this->nodeStep = (nextNode->value - currentValue) / duration;
-  }
+      return &this->nodes[this->nodeIndex];
+    }
 
-  void process() {
-    T *nextNode = this->getNextNode();
+    T *getNextNode() {
+      if (this->nodeIndex + 1 >= this->nodes.size()) {
+        return nullptr;
+      }
 
-    if (!nextNode) {
+      return &this->nodes[this->nodeIndex + 1];
+    }
+
+    void calculateStep() {
+      T *nextNode = getNextNode();
+
+      if (!nextNode || nextNode->duration == 0) {
+        this->nodeStep = 0.0f;
         return;
+      }
+
+      const float duration = this->samplesPerMillisecond * nextNode->duration;
+
+      this->nodeStep = (nextNode->value - currentValue) / duration;
     }
 
-    this->currentValue += this->nodeStep;
-    this->nodeTime += 1 / this->samplesPerMillisecond;
+    void process() {
+      T *nextNode = this->getNextNode();
 
-    if (this->nodeTime >= nextNode->duration) {
-      this->currentValue = nextNode->value;
+      if (!nextNode) {
+          return;
+      }
 
-      this->reset(this->nodeIndex + 1);
+      this->currentValue += this->nodeStep;
+      this->nodeTime += 1 / this->samplesPerMillisecond;
+
+      if (this->nodeTime >= nextNode->duration) {
+        this->currentValue = nextNode->value;
+
+        this->reset(this->nodeIndex + 1);
+      }
+    };
+
+    std::vector<T> *getNodes() { 
+      return &this->nodes;
+    };
+
+    void reset(uint32_t index = 0) {
+      this->nodeIndex = index;
+      this->nodeTime = 0.0f;
+
+      if (this->nodeIndex >= this->nodes.size()) {
+        this->nodeStep = 0.0f;
+        return;
+      }
+
+      calculateStep();
     }
-  };
-
-  std::vector<T> *getNodes() { 
-    return &this->nodes;
-  };
-
-  void reset(uint32_t index = 0) {
-    this->nodeIndex = index;
-    this->nodeTime = 0.0f;
-
-    if (this->nodeIndex >= this->nodes.size()) {
-      this->nodeStep = 0.0f;
-      return;
-    }
-
-    calculateStep();
-  }
 };

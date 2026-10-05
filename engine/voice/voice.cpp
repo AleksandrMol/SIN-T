@@ -28,13 +28,21 @@ int16_t Voice::getKey() {
   return this->key;
 };
 
+void Voice::setSampleRate(float sampleRate) {
+  this->env.setSampleRate(sampleRate);
+  this->osc.setSampleRate(sampleRate);
+  this->lfo.setSampleRate(sampleRate);
+}
+
 void Voice::setActive(bool isActive) {
   this->isActive = isActive;
 
   if(isActive) {
     this->env.noteOn();
+    this->lfo.noteOn();
     this->setIsPlaying(true);
   } else {
+    this->lfo.noteOff();
     this->env.noteOff();
   }
 };
