@@ -10,7 +10,7 @@ Oscillator::Oscillator() {
   this->currentSample = 0.0f;
 
   this->setPhaseStep();
-  this->setWave(WAVE_TYPE::SIN);
+  this->setWave(WAVE_TYPE::SAW);
 }
 
 /**

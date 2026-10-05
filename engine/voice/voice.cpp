@@ -32,6 +32,7 @@ void Voice::setSampleRate(float sampleRate) {
   this->env.setSampleRate(sampleRate);
   this->osc.setSampleRate(sampleRate);
   this->lfo.setSampleRate(sampleRate);
+  this->filter.setSampleRate(sampleRate);
 }
 
 void Voice::setActive(bool isActive) {
@@ -70,6 +71,6 @@ void Voice::process() {
     this->env.doSample();
     this->osc.doSample();
 
-    this->output = this->osc.currentSample * this->env.currentValue;
+    this->output = this->filter.calculateOut(this->osc.currentSample) * this->env.currentValue;
   }
 };

@@ -2,6 +2,7 @@
 #include "../lfo/lfo.h"
 #include "../oscillator/oscillator.h"
 #include "../envelope/envelope.h"
+#include "../filter/filter.h"
 #include <cstdint>
 
 class Voice {
@@ -24,6 +25,7 @@ class Voice {
     Oscillator osc;
     Envelope env;
     LFO lfo;
+    Filter filter;
 
     bool isActive;
     bool isPlaying;
