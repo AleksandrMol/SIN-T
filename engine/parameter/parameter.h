@@ -23,3 +23,4 @@ class Parameter {
     float minValue;
     float maxValue;
 };
+
