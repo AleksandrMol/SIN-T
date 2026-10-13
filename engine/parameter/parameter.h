@@ -1,8 +1,13 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
 class Parameter {
   public:
     Parameter(float base, float min, float max);
+ 
+    void setId(std::optional<uint32_t> id);
+    std::optional<uint32_t> getId();
 
     void setBaseValue(float value);
 
@@ -15,6 +20,8 @@ class Parameter {
 
   private:
     float clampValue(float value);
+
+    std::optional<uint32_t> id;
 
     float baseValue;
     float additionalValue;
