@@ -546,12 +546,41 @@ TEST_CASE("События нот CLAP") {
   REQUIRE(fixture.load(buildPreset()));
   fixture.start();
 
-  SUBCASE("Note on с нулевой velocity — обычная нота, а не отпускание") {
-    const clap_event_note_t first = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
-    const clap_event_note_t second = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 0.0);
+  SUBCASE("Note on с нулевой velocity отпускает клавишу, а не запускает голос (D-047)") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+    const clap_event_note_t off = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 0.0);
 
-    fixture.process(100, { &first.header });
-    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &second.header });
+    fixture.process(100, { &on.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Отпускание находит голос, даже если хост выдал событию новый note_id (D-047)") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 1.0, 184);
+    const clap_event_note_t off = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 0.0, 185);
+
+    fixture.process(100, { &on.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Note on с нулевой velocity без нажатой клавиши не создаёт голос (D-047)") {
+    const clap_event_note_t off = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 0.0);
+
+    CHECK(isSilent(fixture.process(1000, { &off.header }), 0, 1000));
+  }
+
+  SUBCASE("Нулевая velocity не отпускает другую клавишу и другой канал (D-047)") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+    const clap_event_note_t otherKey = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4 + 1, 0.0);
+    clap_event_note_t otherChannel = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 0.0);
+
+    otherChannel.channel = 1;
+
+    fixture.process(100, { &on.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &otherKey.header, &otherChannel.header });
 
     CHECK(peak(fixture.process(1000), 0, 1000) > 0.3f);
   }
@@ -560,6 +589,16 @@ TEST_CASE("События нот CLAP") {
     const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, -1);
 
     CHECK(isSilent(fixture.process(1000, { &on.header }), 0, 1000));
+  }
+
+  SUBCASE("Нулевая velocity без клавиши ничего не отпускает") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+    const clap_event_note_t off = makeNote(CLAP_EVENT_NOTE_ON, -1, 0.0);
+
+    fixture.process(100, { &on.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &off.header });
+
+    CHECK(peak(fixture.process(1000), 0, 1000) > 0.3f);
   }
 
   SUBCASE("Choke быстро глушит ноту") {

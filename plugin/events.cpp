@@ -40,9 +40,17 @@ void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t
         case CLAP_EVENT_NOTE_ON: {
           const clap_event_note_t *ev = (const clap_event_note_t *)event_header;
 
-          // Нулевая velocity в CLAP допустима и не означает отпускание ноты.
           // Note on без порта, канала или клавиши CLAP разрешает игнорировать
-          if (ev->port_index >= 0 && ev->channel >= 0 && ev->key >= 0) {
+          if (ev->port_index < 0 || ev->channel < 0 || ev->key < 0) {
+            break;
+          }
+
+          // Отступление от CLAP (D-047): старые клавиатуры отпускают клавишу через note on
+          // с нулевой velocity, а хост может передать это как обычную ноту. У такого события
+          // может быть свой note_id, поэтому голос ищется только по порту, каналу и клавише
+          if (ev->velocity == 0.0) {
+            instance->engine.noteOff({ -1, ev->port_index, ev->channel, ev->key });
+          } else {
             instance->engine.noteOn(toAddress(ev), (float)ev->velocity);
           }
           break;
