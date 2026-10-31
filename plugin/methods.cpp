@@ -7,9 +7,6 @@
 
 // Колбэк инициализации конкретного инстанса плагина
 bool my_plugin_init(const struct clap_plugin *plugin) {
-  // Приводим указатель к нашему типу, чтобы получить доступ к стейту
-  MyPluginInstance* instance = (MyPluginInstance*)plugin;
-
   // Тут можно выделить память под внутренние нужды плагина, если необходимо
   return true;
 }

@@ -1,9 +1,10 @@
+#pragma once
 #include "../clap/entry.h"
 #include "../clap/factory/plugin-factory.h"
 #include "../clap/plugin-features.h"
 #include "../clap/version.h"
 #include "../clap/clap.h"
-#include "../engine/generatoir/generator.h"
+#include "../engine/generator/generator.h"
 
 // Фабрика плагина
 extern const clap_plugin_factory s_my_plugin_factory;

@@ -5,6 +5,14 @@
 // ID плагина.
 extern const char* const MY_PLUGIN_ID = "com.chillyswim.sin-t";
 
+// Теги для DAW, чтобы DAW понимала тип плагина
+static const char* const s_my_plugin_features[] = {
+  CLAP_PLUGIN_FEATURE_INSTRUMENT, // Инструмент
+  CLAP_PLUGIN_FEATURE_SYNTHESIZER, // Синтезатор
+  CLAP_PLUGIN_FEATURE_STEREO, // Для работы со стерео звуком
+  NULL
+};
+
 // Cтруктура с описанием плагина - Дескриптор
 extern const clap_plugin_descriptor s_my_plugin_desc = {
   .clap_version = CLAP_VERSION_INIT, // Версия плагина берётся из макроса
@@ -12,14 +20,9 @@ extern const clap_plugin_descriptor s_my_plugin_desc = {
   .name = "SIN-T", // Имя плагина
   .vendor = "ChillySwim", // Имя разработчика
   .url = "URL",
+  .manual_url = "",
+  .support_url = "",
   .version = "1.0.0",
   .description = "Desc",
-
-  // Теги для DAW, чтобы DAW понимала тип плагина
-  .features = (const char *[]) {
-    CLAP_PLUGIN_FEATURE_INSTRUMENT, // Инструмент
-    CLAP_PLUGIN_FEATURE_SYNTHESIZER, // Аудио эффект
-    CLAP_PLUGIN_FEATURE_STEREO, // Для работы со стерео звуком
-    NULL
-  },
+  .features = s_my_plugin_features,
 };

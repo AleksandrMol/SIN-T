@@ -1,0 +1,17 @@
+# Сборка
+/build/
+/build-*/
+*.clap
+*.o
+*.so
+*.dll
+*.exe
+
+# Инструменты
+/.cache/
+/.vscode/
+/.idea/
+compile_commands.json
+
+# Результаты офлайн-рендера
+*.wav

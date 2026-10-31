@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <functional>
-#include <sys/types.h>
 #include "../modulation/modulation.h"
 
 enum class ENV_STAGE {

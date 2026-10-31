@@ -1,6 +1,7 @@
 #include "./oscillator.h"
 
 #include <cmath>
+#include <numbers>
 
 Oscillator::Oscillator() {
   this->sampleRate = 44100.0f;
@@ -121,7 +122,7 @@ float Oscillator::calculateSquare()
 float Oscillator::calculateWave() {
   switch (this->waveType) {
     case WAVE_TYPE::SIN:
-      return sinf(2.0f * M_PI * this->phase) * this->volume;
+      return std::sin(2.0f * std::numbers::pi_v<float> * this->phase) * this->volume;
     case WAVE_TYPE::SQR:
       return this->calculateSquare() * this->volume;
     case WAVE_TYPE::SAW:

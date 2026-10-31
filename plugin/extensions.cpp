@@ -7,8 +7,8 @@
 // /////////////////////////////
 
 uint32_t my_plug_audio_ports_count(const clap_plugin_t *plugin, bool is_input) {
-  // We just declare 1 audio input and 1 audio output
-  return 2;
+  // Синтезатор только генерирует звук: входов нет, один стерео-выход
+  return is_input ? 0 : 1;
 }
 
 bool my_plug_audio_ports_get(
@@ -17,7 +17,7 @@ bool my_plug_audio_ports_get(
   bool is_input,
   clap_audio_port_info_t *info
 ) {
-  if (index > 0)
+  if (index > 0 || is_input)
     return false;
   info->id = 0;
   snprintf(info->name, sizeof(info->name), "%s", "My Port Name");
@@ -38,8 +38,8 @@ extern const clap_plugin_audio_ports_t s_my_plug_audio_ports = {
 // ////////////////////////////
 
 uint32_t my_plug_note_ports_count(const clap_plugin_t *plugin, bool is_input) {
-  // We just declare 1 note input
-  return 2;
+  // Один нотный вход, нотных выходов нет
+  return is_input ? 1 : 0;
 }
 
 bool my_plug_note_ports_get(
@@ -48,7 +48,7 @@ bool my_plug_note_ports_get(
   bool is_input,
   clap_note_port_info_t *info
 ) {
-  if (index > 0)
+  if (index > 0 || !is_input)
     return false;
   info->id = 0;
   snprintf(info->name, sizeof(info->name), "%s", "My Port Name");
@@ -81,13 +81,11 @@ extern const clap_plugin_latency_t s_my_plug_latency = {
 // ////////////////
 
 bool my_plug_state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
-  MyPluginInstance* instance = (MyPluginInstance*)plugin;
   // TODO: write the state into stream
   return true;
 }
 
 bool my_plug_state_load(const clap_plugin_t *plugin, const clap_istream_t *stream) {
-  MyPluginInstance* instance = (MyPluginInstance*)plugin;
   // TODO: read the state from stream
   return true;
 }
