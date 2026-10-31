@@ -79,6 +79,15 @@ namespace {
     return result;
   }
 
+  /**
+   * Несдвинутые макросы в файл не пишутся: версия формата остаётся прежней, старые файлы читаются как есть
+   */
+  bool hasDefaultParameters(const ModuleInstance& module) {
+    return std::ranges::all_of(module.descriptor->parameters, [&module](const ParameterDescriptor& parameter) {
+      return module.parameters.at(parameter.key) == parameter.defaultValue;
+    });
+  }
+
   ModuleId readId(const json& value) {
     if (!value.is_number_unsigned() || value.get<uint64_t>() >= std::numeric_limits<ModuleId>::max()) {
       throw PresetError("неверный ID модуля: " + value.dump());
@@ -253,7 +262,9 @@ std::string saveModel(const SynthModel& model) {
 
   json modules = json::array();
   for (const auto& [id, module] : model.getModules()) {
-    modules.push_back(moduleToJson(module));
+    if (module.descriptor->role != MODULE_ROLE::MACROS || !hasDefaultParameters(module)) {
+      modules.push_back(moduleToJson(module));
+    }
   }
   file["modules"] = std::move(modules);
 
@@ -290,6 +301,7 @@ std::expected<SynthModel, std::string> loadModel(const ModuleRegistry* registry,
     SynthModel model(registry);
     ModuleId maxId = model.outputId;
     bool hasOutput = false;
+    bool hasMacros = false;
 
     // Настройки задаются после всех модулей: команде нужен уже созданный модуль
     std::vector<std::pair<ModuleId, const json*>> settingEntries;
@@ -310,6 +322,16 @@ std::expected<SynthModel, std::string> loadModel(const ModuleRegistry* registry,
         }
 
         hasOutput = true;
+        settingEntries.emplace_back(id, &entry);
+        continue;
+      }
+
+      if (type == MACROS_DESCRIPTOR.type) {
+        if (id != MACROS_MODULE_ID || owner || hasMacros) {
+          throw PresetError("неверный модуль макросов");
+        }
+
+        hasMacros = true;
         settingEntries.emplace_back(id, &entry);
         continue;
       }

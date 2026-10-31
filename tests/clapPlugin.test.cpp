@@ -11,6 +11,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "../clap/clap.h"
 #include "../engine/filter/filterProcessor.h"
 #include "../engine/moduleCatalog/moduleCatalog.h"
@@ -100,6 +102,17 @@ namespace {
     }
 
     return saveModel(model);
+  }
+
+  /**
+   * Состояние проекта без раздела session: то, что совпадает с пресетом (D-020)
+   */
+  std::string withoutSession(const std::string& state) {
+    nlohmann::json file = nlohmann::json::parse(state);
+
+    file.erase("session");
+
+    return file.dump(2);
   }
 
   /**
@@ -195,6 +208,8 @@ namespace {
       const clap_plugin_factory_t* factory = getFactory();
 
       this->host.clap_version = CLAP_VERSION;
+      this->host.get_extension = [](const clap_host_t*, const char*) -> const void* { return nullptr; };
+      this->host.request_callback = [](const clap_host_t*) {};
       this->plugin = factory->create_plugin(factory, &this->host, factory->get_plugin_descriptor(factory, 0)->id);
 
       REQUIRE(this->plugin != nullptr);
@@ -504,6 +519,116 @@ TEST_CASE("Ноты в виде сырого MIDI") {
   fixture.plugin->deactivate(fixture.plugin);
 }
 
+TEST_CASE("Педаль sustain и команды паники через MIDI (D-058)") {
+  PluginFixture fixture;
+
+  REQUIRE(fixture.load(buildPreset()));
+  fixture.start();
+
+  const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+  const clap_event_note_t off = makeNote(CLAP_EVENT_NOTE_OFF, KEY_A4);
+  const clap_event_midi_t pedalDown = makeMidi(0xB0, 64, 127);
+  const clap_event_midi_t pedalUp = makeMidi(0xB0, 64, 0);
+  const uint32_t fadeFrames = FADE_FRAMES + CHUNK_FRAMES;
+
+  fixture.process(100, { &on.header });
+
+  SUBCASE("Без педали нота затихает сразу") {
+    fixture.process(fadeFrames, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Педаль держит отпущенную ноту, отпускание педали её заканчивает") {
+    // Педаль приходит сырым MIDI, а нота событием CLAP: так делает Reaper
+    fixture.process(100, { &pedalDown.header });
+    fixture.process(100, { &off.header });
+
+    CHECK(peak(fixture.process(4800), 0, 4800) > 0.3f);
+
+    fixture.process(fadeFrames, { &pedalUp.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Значение ниже 64 педаль не нажимает") {
+    const clap_event_midi_t half = makeMidi(0xB0, 64, 63);
+
+    fixture.process(100, { &half.header });
+    fixture.process(fadeFrames, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Педаль другого канала ноту не держит") {
+    const clap_event_midi_t otherChannel = makeMidi(0xB1, 64, 127);
+
+    fixture.process(100, { &otherChannel.header });
+    fixture.process(fadeFrames, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("All notes off отпускает и ноты, и педаль") {
+    const clap_event_midi_t allNotesOff = makeMidi(0xB0, 123, 0);
+
+    fixture.process(100, { &pedalDown.header });
+    fixture.process(fadeFrames, { &allNotesOff.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("All sound off заглушает ноту под педалью") {
+    const clap_event_midi_t allSoundOff = makeMidi(0xB0, 120, 0);
+
+    fixture.process(100, { &pedalDown.header });
+    fixture.process(fadeFrames, { &allSoundOff.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("После all sound off педаль снята: следующая нота не зависает") {
+    const clap_event_midi_t allSoundOff = makeMidi(0xB0, 120, 0);
+
+    fixture.process(100, { &pedalDown.header });
+    fixture.process(fadeFrames, { &allSoundOff.header });
+    fixture.process(100, { &on.header });
+    fixture.process(fadeFrames, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Команды паники другого канала ноту не трогают") {
+    const clap_event_midi_t allNotesOff = makeMidi(0xB1, 123, 0);
+    const clap_event_midi_t allSoundOff = makeMidi(0xB1, 120, 0);
+
+    fixture.process(fadeFrames, { &allNotesOff.header, &allSoundOff.header });
+
+    CHECK(peak(fixture.process(1000), 0, 1000) > 0.3f);
+  }
+
+  SUBCASE("Сброс хоста отпускает педаль: следующая нота не зависает") {
+    fixture.process(100, { &pedalDown.header });
+    fixture.plugin->reset(fixture.plugin);
+
+    fixture.process(100, { &on.header });
+    fixture.process(fadeFrames, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Другие контроллеры ноты не трогают") {
+    const clap_event_midi_t modWheel = makeMidi(0xB0, 1, 127);
+
+    fixture.process(fadeFrames, { &modWheel.header });
+
+    CHECK(peak(fixture.process(1000), 0, 1000) > 0.3f);
+  }
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
+}
+
 TEST_CASE("Pitch bend приходит через MIDI и сдвигает высоту на диапазон генератора (D-027)") {
   PluginFixture fixture;
 
@@ -657,15 +782,15 @@ TEST_CASE("Состояние сохраняется и восстанавлив
 
   // Потоки могут работать мелкими порциями
   REQUIRE(source.load(preset, 3));
-  CHECK(source.save() == preset);
+  CHECK(withoutSession(source.save()) == preset);
 
   ChunkedWriter writer = { .chunkSize = 5 };
   REQUIRE(source.state->save(source.plugin, &writer.stream));
-  CHECK(writer.text == preset);
+  CHECK(withoutSession(writer.text) == preset);
 
   PluginFixture restored;
   REQUIRE(restored.load(writer.text));
-  CHECK(restored.save() == preset);
+  CHECK(restored.save() == writer.text);
 }
 
 TEST_CASE("Ошибка потока отклоняет сохранение и загрузку") {
@@ -686,13 +811,13 @@ TEST_CASE("Работающий плагин принимает новый гр�
   REQUIRE(fixture.plugin->activate(fixture.plugin, SAMPLE_RATE, 1, 256));
 
   CHECK(fixture.load(preset));
-  CHECK(fixture.save() == preset);
+  CHECK(withoutSession(fixture.save()) == preset);
 
   CHECK(fixture.load(buildPreset(2000.0f)));
-  CHECK(fixture.save() == buildPreset(2000.0f));
+  CHECK(withoutSession(fixture.save()) == buildPreset(2000.0f));
 
   CHECK_FALSE(fixture.load("not a preset"));
-  CHECK(fixture.save() == buildPreset(2000.0f));
+  CHECK(withoutSession(fixture.save()) == buildPreset(2000.0f));
 
   fixture.plugin->deactivate(fixture.plugin);
 }

@@ -13,6 +13,9 @@
 // Постоянный ID модуля. Уникален во всей модели и не используется повторно
 using ModuleId = uint32_t;
 
+// Макросы есть в любой модели. Обычные ID начинаются с 1, поэтому этот не пересекается со старыми файлами (D-055)
+constexpr ModuleId MACROS_MODULE_ID = 0;
+
 /**
  * Экземпляр модуля в модели: только данные, без DSP
  */
@@ -74,3 +77,16 @@ struct ModRoute {
 
 // Маршрут определяется парой источник и цель: повторный такой же модель не допускает
 using RouteKey = std::pair<ModSource, ModTarget>;
+
+// Слот хоста без параметра
+constexpr uint32_t NO_PARAMETER = UINT32_MAX;
+
+/**
+ * Куда ведёт слот хоста (D-011). Индекс параметра — в порядке описания модуля
+ */
+struct SlotTarget {
+  ModuleId module = 0;
+  uint32_t parameter = NO_PARAMETER;
+
+  bool operator==(const SlotTarget&) const = default;
+};

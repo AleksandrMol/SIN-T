@@ -1,7 +1,9 @@
 #pragma once
 
 #include <expected>
+#include <optional>
 #include <string>
+#include <string_view>
 
 enum class PARAM_CURVE {
   LINEAR,
@@ -21,6 +23,7 @@ struct ParameterDescriptor {
   std::string unit{};
   bool isStepped = false;
   bool isModulatable = false;
+  bool isStructural = false; // Значение приходит с планом: ему может понадобиться память (D-053)
 };
 
 /**
@@ -44,3 +47,15 @@ float toNormalized(const ParameterDescriptor& parameter, float real);
  * у ступенчатого параметра округляет
  */
 float limitReal(const ParameterDescriptor& parameter, float real);
+
+/**
+ * Значение в реальных единицах как текст для человека: «1200 Hz», «0.300 s».
+ * Не зависит от локали: хост мог поменять её во всём процессе
+ */
+std::string formatParameter(const ParameterDescriptor& parameter, float real);
+
+/**
+ * Обратно к formatParameter. Единицы после числа не обязательны. Значение вне диапазона
+ * ограничивается. Пусто, если текст не начинается с числа
+ */
+std::optional<float> parseParameter(const ParameterDescriptor& parameter, std::string_view text);

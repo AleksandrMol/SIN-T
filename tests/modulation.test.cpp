@@ -663,6 +663,86 @@ TEST_CASE_FIXTURE(ModulationFixture, "Глобальный экземпляр о
   CHECK(this->run(600).back() == 0.0f);
 }
 
+TEST_CASE_FIXTURE(ModulationFixture, "Педаль держит глобальный экземпляр общего ENV (D-005, D-058)") {
+  const ModuleId dc = this->addMainDc();
+  const ModuleId env = this->addEnv(std::nullopt, 0.001f, 10.0f, 1.0f, 0.01f);
+
+  this->route(env, dc, "level");
+  this->apply();
+
+  this->engine.setSustain(0, true);
+  this->engine.noteOn(note(KEY_A4), 1.0f);
+  this->run(200);
+  this->engine.noteOff(note(KEY_A4));
+
+  CHECK(this->run(600).back() == doctest::Approx(1.0f));
+
+  // Педаль другого канала к этой ноте отношения не имеет
+  this->engine.setSustain(1, false);
+  CHECK(this->run(600).back() == doctest::Approx(1.0f));
+
+  this->engine.setSustain(0, false);
+  CHECK(this->run(600).back() == 0.0f);
+}
+
+TEST_CASE_FIXTURE(ModulationFixture, "Отпускание педали не трогает глобальный экземпляр нажатой последней ноты (D-058)") {
+  const ModuleId dc = this->addMainDc();
+  const ModuleId env = this->addEnv(std::nullopt, 0.001f, 10.0f, 1.0f, 0.01f);
+
+  this->route(env, dc, "level");
+  this->apply();
+  this->engine.setSustain(0, true);
+
+  SUBCASE("Педаль держала прошлую ноту, а последняя пришла позже") {
+    this->engine.noteOn(note(KEY_A4), 1.0f);
+    this->run(200);
+    this->engine.noteOff(note(KEY_A4));
+    this->engine.noteOn(note(KEY_C5), 1.0f);
+  }
+
+  SUBCASE("Под педалью отпустили старую ноту, а не последнюю") {
+    this->engine.noteOn(note(KEY_A4), 1.0f);
+    this->engine.noteOn(note(KEY_C5), 1.0f);
+    this->run(200);
+    this->engine.noteOff(note(KEY_A4));
+  }
+
+  this->run(200);
+  this->engine.setSustain(0, false);
+
+  CHECK(this->run(600).back() == doctest::Approx(1.0f));
+}
+
+TEST_CASE_FIXTURE(ModulationFixture, "Педаль без отпущенной клавиши глобальный экземпляр не отпускает (D-058)") {
+  const ModuleId dc = this->addMainDc();
+  const ModuleId env = this->addEnv(std::nullopt, 0.001f, 10.0f, 1.0f, 0.01f);
+
+  this->route(env, dc, "level");
+  this->apply();
+
+  this->engine.noteOn(note(KEY_A4), 1.0f);
+  this->run(200);
+  this->engine.setSustain(0, true);
+  this->engine.setSustain(0, false);
+
+  CHECK(this->run(600).back() == doctest::Approx(1.0f));
+}
+
+TEST_CASE_FIXTURE(ModulationFixture, "Макрос работает как глобальный источник: значение идёт в параметр голоса (D-055)") {
+  const Voice voice = this->addDcGenerator();
+
+  this->engine.setSlotTargets({ { MACROS_MODULE_ID, 2 } });
+  REQUIRE(this->model->apply(AddRoute{ { { MACROS_MODULE_ID, "macro3" }, { voice.dc, "level" }, 1.0f } }).has_value());
+  REQUIRE(this->model->apply(SetParameter{ MACROS_MODULE_ID, "macro3", 0.25f }).has_value());
+  this->apply();
+
+  this->engine.noteOn(note(KEY_A4), 1.0f);
+  CHECK(this->settle(30) == doctest::Approx(0.25f));
+
+  this->engine.setSlot(0, 0.75f);
+  CHECK(this->settle(30) == doctest::Approx(0.75f));
+}
+
 TEST_CASE_FIXTURE(ModulationFixture, "Choke отпускает глобальный экземпляр общего ENV") {
   const ModuleId dc = this->addMainDc();
   const ModuleId env = this->addEnv(std::nullopt, 0.001f, 10.0f, 1.0f, 0.01f);

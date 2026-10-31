@@ -35,6 +35,7 @@ namespace {
 }
 
 SynthModel::SynthModel(const ModuleRegistry* registry) : registry(registry) {
+  this->insertModule(MACROS_MODULE_ID, &MACROS_DESCRIPTOR, std::nullopt);
   this->outputId = this->createModule(&OUTPUT_DESCRIPTOR, std::nullopt);
 }
 
@@ -134,6 +135,10 @@ CommandResult SynthModel::execute(const AddModule& command) {
     return std::unexpected("выход графа создаётся автоматически");
   }
 
+  if (descriptor->role == MODULE_ROLE::MACROS) {
+    return std::unexpected("макросы создаются автоматически");
+  }
+
   if (command.owner) {
     const ModuleInstance* owner = this->findModule(*command.owner);
 
@@ -164,6 +169,10 @@ CommandResult SynthModel::execute(const RemoveModule& command) {
 
   if (module->descriptor->role == MODULE_ROLE::OUTPUT) {
     return std::unexpected("выход графа нельзя удалить");
+  }
+
+  if (module->descriptor->role == MODULE_ROLE::MACROS) {
+    return std::unexpected("макросы нельзя удалить");
   }
 
   // Вместе с генератором удаляется весь его подграф
@@ -280,6 +289,10 @@ CommandResult SynthModel::execute(const SetModuleEnabled& command) {
 
   if (module->second.descriptor->role == MODULE_ROLE::OUTPUT && !command.enabled) {
     return std::unexpected("выход графа нельзя отключить");
+  }
+
+  if (module->second.descriptor->role == MODULE_ROLE::MACROS && !command.enabled) {
+    return std::unexpected("макросы нельзя отключить");
   }
 
   module->second.enabled = command.enabled;

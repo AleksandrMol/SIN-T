@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -9,6 +10,10 @@ constexpr uint32_t MAX_POLYPHONY = 64;
 // Слотов вдвое больше лимита: новая нота получает свободный слот, пока забранный голос затихает (D-044)
 constexpr uint32_t SLOTS_PER_VOICE = 2;
 constexpr uint32_t MAX_VOICE_SLOTS = MAX_POLYPHONY * SLOTS_PER_VOICE;
+
+// Педаль sustain нажата на канале MIDI
+constexpr uint32_t MIDI_CHANNEL_COUNT = 16;
+using SustainPedals = std::array<bool, MIDI_CHANNEL_COUNT>;
 
 /**
  * Адрес ноты в CLAP. В адресе события -1 означает «любое значение»
@@ -26,6 +31,11 @@ struct NoteAddress {
  */
 bool matchesNote(const NoteAddress& event, const NoteAddress& note);
 
+/**
+ * Нажата ли педаль на канале. Канал вне MIDI педали не имеет
+ */
+bool isPedalDown(const SustainPedals& pedals, int16_t channel);
+
 enum class VOICE_STAGE {
   IDLE, // Свободен
   HELD, // Клавиша нажата
@@ -39,6 +49,7 @@ struct VoiceState {
   float velocity = 0.0f;
   uint64_t order = 0; // Порядковый номер ноты: чем меньше, тем голос старше
   float fade = 1.0f; // Текущая громкость затухания
+  bool isSustained = false; // Клавиша отпущена, но голос держит педаль: для нот он всё ещё нажат
 };
 
 /**
@@ -63,9 +74,15 @@ class VoicePool {
     uint32_t noteOn(const NoteAddress& note, float velocity);
 
     /**
-     * Отпускает удерживаемые голоса с подходящим адресом
+     * Отпускает удерживаемые голоса с подходящим адресом. Голос на канале с нажатой педалью остаётся
+     * удерживаемым, пока педаль не отпустят (D-058)
      */
-    void noteOff(const NoteAddress& note);
+    void noteOff(const NoteAddress& note, const SustainPedals& pedals = {});
+
+    /**
+     * Педаль канала отпущена: голоса, которые она держала, отпускаются
+     */
+    void releaseSustained(int16_t channel);
 
     /**
      * Запускает затухание голосов с подходящим адресом, в каком бы состоянии они ни были

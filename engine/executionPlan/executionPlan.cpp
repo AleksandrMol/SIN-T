@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "../generator/generatorProcessor.h"
+#include "../macros/macrosProcessor.h"
 #include "../modulationCompiler/modulationCompiler.h"
 #include "../planExchange/planExchange.h"
 #include "../stubProcessor/stubProcessor.h"
@@ -203,6 +204,8 @@ namespace {
 
       slot.generator = generator.get();
       slot.processor = std::move(generator);
+    } else if (module.descriptor->role == MODULE_ROLE::MACROS) {
+      slot.processor = std::make_unique<MacrosProcessor>();
     } else {
       slot.processor = module.descriptor->createProcessor ? module.descriptor->createProcessor() : createStubProcessor();
     }

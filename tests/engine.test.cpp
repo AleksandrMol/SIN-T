@@ -607,14 +607,14 @@ TEST_CASE_FIXTURE(EngineFixture, "Состояния удалённых моду
 
   syncModuleSlots(*this->model, slots, SAMPLE_RATE);
 
-  REQUIRE(slots.size() == 2);
+  REQUIRE(slots.size() == 3); // С макросами
 
   const ModuleProcessor* kept = slots.at(filter).processor.get();
 
   REQUIRE(this->model->apply(RemoveModule{ osc }).has_value());
   syncModuleSlots(*this->model, slots, SAMPLE_RATE);
 
-  CHECK(slots.size() == 1);
+  CHECK(slots.size() == 2);
   CHECK(slots.at(filter).processor.get() == kept);
 }
 

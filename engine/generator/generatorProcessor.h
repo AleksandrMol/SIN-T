@@ -29,7 +29,8 @@ class GeneratorProcessor : public ModuleProcessor {
      * модуляция новой ноты начинается с её сэмпла и сразу догоняет общую сетку (D-008)
      */
     void noteOn(const NoteAddress& note, float velocity, const PlanGenerator& plan, uint32_t position, const ModulationClock& clock);
-    void noteOff(const NoteAddress& note);
+    void noteOff(const NoteAddress& note, const SustainPedals& pedals);
+    void releaseSustained(int16_t channel);
     void choke(const NoteAddress& note);
 
     /**

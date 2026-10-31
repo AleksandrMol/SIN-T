@@ -22,6 +22,11 @@ bool my_plugin_init(const struct clap_plugin *plugin) {
   }
 
   instance->model = std::move(*model);
+  instance->hostParams = (const clap_host_params_t*)instance->host->get_extension(instance->host, CLAP_EXT_PARAMS);
+  instance->hostPresetLoad = (const clap_host_preset_load_t*)instance->host->get_extension(instance->host, CLAP_EXT_PRESET_LOAD);
+
+  instance->slots.sync(*instance->model);
+  instance->engine.setSlotTargets(instance->slots.getTargets());
   instance->engine.applyModel(*instance->model);
 
   return true;
@@ -48,6 +53,7 @@ bool my_plugin_activate(
   instance->engine.prepare((float)sample_rate);
   instance->engine.reset(); // Голоса и состояния прошлого запуска или прошлого пресета не должны звучать
   instance->engine.setLive(true); // Теперь process может идти параллельно с главным потоком
+  instance->isActive = true;
 
   return true;
 }
@@ -56,6 +62,7 @@ void my_plugin_deactivate(const struct clap_plugin *plugin) {
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
   instance->engine.setLive(false);
+  instance->isActive = false;
 }
 
 void my_plug_reset(const struct clap_plugin *plugin) {
@@ -74,5 +81,6 @@ void my_plugin_stop_processing(const struct clap_plugin *plugin) {}
 void my_plugin_on_main_thread(const struct clap_plugin *plugin) {
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
+  my_plug_sync_slot_values(instance);
   instance->engine.update();
 }

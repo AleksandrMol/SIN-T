@@ -69,9 +69,17 @@ void Engine::applyDirectly(const SynthModel& model) {
   this->desired = model;
   this->settling.reset();
 
-  this->switchPlan(this->exchange.adopt(compilePlan(model, this->slots, this->bases)));
+  this->switchPlan(this->buildPlan(model));
   this->startMainModulation();
   this->exchange.collect();
+}
+
+ExecutionPlan* Engine::buildPlan(const SynthModel& scheme, const TransitionFades& fades) {
+  std::unique_ptr<ExecutionPlan> compiled = compilePlan(scheme, this->slots, this->bases, fades);
+
+  compiled->slotTargets = this->slotTargets;
+
+  return this->exchange.adopt(std::move(compiled));
 }
 
 void Engine::applyModel(const SynthModel& model) {
@@ -111,7 +119,7 @@ void Engine::replaceModel(const SynthModel& model) {
   this->desired = model;
   this->settling.reset();
 
-  ExecutionPlan* next = this->exchange.adopt(compilePlan(model, this->slots, this->bases));
+  ExecutionPlan* next = this->buildPlan(model);
 
   next->isReplacement = true;
   next->fadeChunks = this->countFadeChunks();
@@ -218,7 +226,7 @@ void Engine::publishPlan(const SynthModel& scheme, const TransitionFades& fades)
   syncModuleSlots(scheme, this->slots, this->sampleRate, &this->exchange, SLOT_VALUES::KEEP);
   addParameterBases(scheme, this->bases, this->exchange);
 
-  ExecutionPlan* next = this->exchange.adopt(compilePlan(scheme, this->slots, this->bases, fades));
+  ExecutionPlan* next = this->buildPlan(scheme, fades);
 
   if (!fades.isEmpty()) {
     next->fadeChunks = this->countFadeChunks();
@@ -244,6 +252,7 @@ void Engine::reset() {
 
   this->pitchBend = 0.0f;
   this->lastNoteGate = false;
+  this->pedals = {};
   this->chunkPosition = 0;
   this->startMainModulation();
 }
@@ -349,6 +358,7 @@ void Engine::noteOn(const NoteAddress& note, float velocity) {
 
   this->lastNote = note;
   this->lastNoteGate = true;
+  this->isLastNoteSustained = false;
 }
 
 void Engine::releaseLastNote(const NoteAddress& note) {
@@ -363,10 +373,14 @@ void Engine::noteOff(const NoteAddress& note) {
   }
 
   for (const PlanGenerator& generator : this->plan->generators) {
-    generator.processor->noteOff(note);
+    generator.processor->noteOff(note, this->pedals);
   }
 
-  this->releaseLastNote(note);
+  if (isPedalDown(this->pedals, this->lastNote.channel)) {
+    this->isLastNoteSustained = this->isLastNoteSustained || matchesNote(note, this->lastNote);
+  } else {
+    this->releaseLastNote(note);
+  }
 }
 
 void Engine::choke(const NoteAddress& note) {
@@ -381,6 +395,33 @@ void Engine::choke(const NoteAddress& note) {
   this->releaseLastNote(note);
 }
 
+void Engine::setSustain(int16_t channel, bool isDown) {
+  this->pedals[(size_t)channel] = isDown;
+
+  if (isDown || !this->plan) {
+    return;
+  }
+
+  for (const PlanGenerator& generator : this->plan->generators) {
+    generator.processor->releaseSustained(channel);
+  }
+
+  if (this->isLastNoteSustained && this->lastNote.channel == channel) {
+    this->isLastNoteSustained = false;
+    this->lastNoteGate = false;
+  }
+}
+
+void Engine::allNotesOff(int16_t channel) {
+  this->setSustain(channel, false);
+  this->noteOff({ -1, -1, channel, -1 });
+}
+
+void Engine::allSoundOff(int16_t channel) {
+  this->setSustain(channel, false);
+  this->choke({ -1, -1, channel, -1 });
+}
+
 void Engine::setPitchBend(float value) {
   this->pitchBend = value;
 }
@@ -389,23 +430,53 @@ void Engine::setTempo(float tempo) {
   this->tempo = tempo > 0.0f ? tempo : DEFAULT_TEMPO;
 }
 
-void Engine::setParameter(ModuleId module, uint32_t parameter, float value) {
+BaseValue* Engine::findBase(ModuleId module, uint32_t parameter) {
   if (!this->plan) {
-    return;
+    return nullptr;
   }
 
   const auto values = this->plan->bases.find(module);
 
   if (values == this->plan->bases.end() || parameter >= values->second.size()) {
+    return nullptr;
+  }
+
+  return &values->second[parameter];
+}
+
+void Engine::setBase(BaseValue& base, float normalized) {
+  // Иначе следующий просмотр запросов вернул бы старое значение от главного потока
+  base.requested.store(normalized, std::memory_order_relaxed);
+  this->smoothBase(base, normalized);
+}
+
+void Engine::setParameter(ModuleId module, uint32_t parameter, float value) {
+  if (BaseValue* base = this->findBase(module, parameter)) {
+    this->setBase(*base, toNormalized(*base->descriptor, value));
+  }
+}
+
+void Engine::setSlot(uint32_t slot, float normalized) {
+  if (!this->plan || slot >= this->plan->slotTargets.size()) {
     return;
   }
 
-  BaseValue& base = values->second[parameter];
-  const float target = toNormalized(*base.descriptor, value);
+  const SlotTarget& target = this->plan->slotTargets[slot];
 
-  // Иначе следующий просмотр запросов вернул бы старое значение от главного потока
-  base.requested.store(target, std::memory_order_relaxed);
-  this->smoothBase(base, target);
+  if (BaseValue* base = this->findBase(target.module, target.parameter)) {
+    this->setBase(*base, normalized);
+  }
+}
+
+void Engine::setSlotTargets(std::vector<SlotTarget> targets) {
+  this->slotTargets = std::move(targets);
+}
+
+void Engine::acknowledgeParameter(const SetParameter& command) {
+  // Модуля там уже может не быть: значение могло обогнать его удаление
+  if (this->desired) {
+    (void)this->desired->apply(command);
+  }
 }
 
 void Engine::smoothBase(BaseValue& base, float target) {

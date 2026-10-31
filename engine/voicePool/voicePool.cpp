@@ -8,19 +8,30 @@ namespace {
   }
 
   /**
-   * Номер самого старого голоса на заданной стадии или -1, если таких нет
+   * Номер самого старого голоса, подходящего под условие, или -1, если таких нет
    */
-  int findOldest(const std::vector<VoiceState>& voices, VOICE_STAGE stage) {
+  template <typename Predicate>
+  int findOldestMatching(const std::vector<VoiceState>& voices, Predicate matches) {
     int oldest = -1;
 
     for (size_t slot = 0; slot < voices.size(); slot++) {
-      if (voices[slot].stage == stage && (oldest < 0 || voices[slot].order < voices[(size_t)oldest].order)) {
+      if (matches(voices[slot]) && (oldest < 0 || voices[slot].order < voices[(size_t)oldest].order)) {
         oldest = (int)slot;
       }
     }
 
     return oldest;
   }
+
+  int findOldest(const std::vector<VoiceState>& voices, VOICE_STAGE stage) {
+    return findOldestMatching(voices, [stage](const VoiceState& voice) {
+      return voice.stage == stage;
+    });
+  }
+}
+
+bool isPedalDown(const SustainPedals& pedals, int16_t channel) {
+  return channel >= 0 && channel < (int16_t)MIDI_CHANNEL_COUNT && pedals[(size_t)channel];
 }
 
 bool matchesNote(const NoteAddress& event, const NoteAddress& note) {
@@ -65,9 +76,23 @@ uint32_t VoicePool::noteOn(const NoteAddress& note, float velocity) {
   return slot;
 }
 
-void VoicePool::noteOff(const NoteAddress& note) {
+void VoicePool::noteOff(const NoteAddress& note, const SustainPedals& pedals) {
   for (VoiceState& voice : this->voices) {
-    if (voice.stage == VOICE_STAGE::HELD && matchesNote(note, voice.note)) {
+    if (voice.stage != VOICE_STAGE::HELD || !matchesNote(note, voice.note)) {
+      continue;
+    }
+
+    if (isPedalDown(pedals, voice.note.channel)) {
+      voice.isSustained = true;
+    } else {
+      voice.stage = VOICE_STAGE::RELEASED;
+    }
+  }
+}
+
+void VoicePool::releaseSustained(int16_t channel) {
+  for (VoiceState& voice : this->voices) {
+    if (voice.stage == VOICE_STAGE::HELD && voice.isSustained && voice.note.channel == channel) {
       voice.stage = VOICE_STAGE::RELEASED;
     }
   }
@@ -124,7 +149,16 @@ uint32_t VoicePool::countSounding() const {
 uint32_t VoicePool::findVictim() const {
   const int released = findOldest(this->voices, VOICE_STAGE::RELEASED);
 
-  return (uint32_t)(released >= 0 ? released : findOldest(this->voices, VOICE_STAGE::HELD));
+  if (released >= 0) {
+    return (uint32_t)released;
+  }
+
+  // Голос под педалью уже не под пальцами: удерживаемый аккорд важнее (D-042, D-058)
+  const int sustained = findOldestMatching(this->voices, [](const VoiceState& voice) {
+    return voice.stage == VOICE_STAGE::HELD && voice.isSustained;
+  });
+
+  return (uint32_t)(sustained >= 0 ? sustained : findOldest(this->voices, VOICE_STAGE::HELD));
 }
 
 /**

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 #include "../executionPlan/executionPlan.h"
 #include "../planExchange/planExchange.h"
@@ -79,6 +80,22 @@ class Engine {
     void choke(const NoteAddress& note);
 
     /**
+     * Педаль sustain канала 0..15 (D-058). Состояние одно на движок: генератор, появившийся
+     * при нажатой педали, тоже её услышит. Вызывается из аудиопотока
+     */
+    void setSustain(int16_t channel, bool isDown);
+
+    /**
+     * Отпускает все ноты канала, педаль тоже: так работает кнопка паники. Вызывается из аудиопотока
+     */
+    void allNotesOff(int16_t channel);
+
+    /**
+     * Заглушает все ноты канала за время быстрого затухания. Вызывается из аудиопотока
+     */
+    void allSoundOff(int16_t channel);
+
+    /**
      * Положение колеса -1..1. Глобальное значение, диапазон задаёт каждый генератор (D-027)
      */
     void setPitchBend(float value);
@@ -94,6 +111,24 @@ class Engine {
      */
     void setParameter(ModuleId module, uint32_t parameter, float value);
 
+    /**
+     * Меняет значение слота хоста, 0..1 (D-011). Адрес берётся из плана, поэтому таблица модели
+     * аудиопотоку не нужна. Слот без параметра пропускается. Вызывается из аудиопотока
+     */
+    void setSlot(uint32_t slot, float normalized);
+
+    /**
+     * Задаёт адреса слотов для следующих планов. Вызывается на главном потоке перед applyModel или replaceModel
+     */
+    void setSlotTargets(std::vector<SlotTarget> targets);
+
+    /**
+     * Сообщает, что значение уже применено в аудиопотоке и записано в модель (D-056). Иначе следующий
+     * applyModel принял бы его за новую правку и послал бы вдогонку устаревшее значение.
+     * Вызывается на главном потоке
+     */
+    void acknowledgeParameter(const SetParameter& command);
+
   private:
     // Главный поток
     float sampleRate = 44100.0f;
@@ -105,6 +140,7 @@ class Engine {
     std::optional<SynthModel> desired; // Что должно исполняться
     std::optional<SynthModel> settling; // Во что превратится applied в конце перехода. Пусто — перехода нет
     uint64_t transitionGeneration = 0;
+    std::vector<SlotTarget> slotTargets;
 
     // Общие для потоков
     std::atomic<bool> hasParameterRequests = false;
@@ -118,11 +154,14 @@ class Engine {
     bool isPlanNew = false; // Новый план мог начать исполнять то, что давно не считалось
     NoteAddress lastNote = { -1, -1, -1, -1 }; // Последняя нота: ею живут глобальные экземпляры общих модуляторов (D-005)
     bool lastNoteGate = false;
+    bool isLastNoteSustained = false;
+    SustainPedals pedals{};
     ExecutionPlan* plan = nullptr;
     ExecutionPlan* outgoing = nullptr; // План, который затухает после замены состояния
     uint32_t chunkPosition = 0; // Положение внутри текущего куска сетки
 
     uint32_t countFadeChunks() const;
+    ExecutionPlan* buildPlan(const SynthModel& scheme, const TransitionFades& fades = {});
     void applyDirectly(const SynthModel& model);
     void sendParameters(const SynthModel& model);
     void setApplied(SynthModel model);
@@ -134,6 +173,8 @@ class Engine {
     void startReplacement(ExecutionPlan* next);
     void finishReplacement();
     void readParameterRequests();
+    BaseValue* findBase(ModuleId module, uint32_t parameter);
+    void setBase(BaseValue& base, float normalized);
     void smoothBase(BaseValue& base, float target);
     VoiceContext makeContext() const;
     void startMainModulation();

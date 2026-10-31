@@ -526,3 +526,52 @@ TEST_CASE_FIXTURE(StubFixture, "Модуль более новой версии 
   CHECK(loaded->findModule(this->stubId)->isStub());
   CHECK(json::parse(saveModel(*loaded)) == file);
 }
+
+TEST_CASE_FIXTURE(PresetFixture, "Несдвинутые макросы в файл не пишутся, сдвинутые сохраняются (D-055)") {
+  const auto hasMacros = [](const std::string& text) {
+    for (const json& module : json::parse(text).at("modules")) {
+      if (module.at("type") == "macros") {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  CHECK_FALSE(hasMacros(saveModel(*this->model)));
+
+  REQUIRE(this->model->apply(SetParameter{ MACROS_MODULE_ID, "macro2", 0.5f }).has_value());
+
+  const std::string text = saveModel(*this->model);
+
+  CHECK(hasMacros(text));
+
+  const auto loaded = loadModel(&this->registry, text);
+
+  REQUIRE_MESSAGE(loaded.has_value(), loaded.error());
+  CHECK(*loaded == *this->model);
+}
+
+TEST_CASE_FIXTURE(PresetFixture, "Маршрут от макроса сохраняется (D-055)") {
+  const ModuleId filter = this->add("test.filter");
+
+  REQUIRE(this->model->apply(AddRoute{ { { MACROS_MODULE_ID, "macro1" }, { filter, "cutoff" }, 0.5f } }).has_value());
+
+  const auto loaded = loadModel(&this->registry, saveModel(*this->model));
+
+  REQUIRE_MESSAGE(loaded.has_value(), loaded.error());
+  CHECK(*loaded == *this->model);
+}
+
+TEST_CASE_FIXTURE(PresetFixture, "Файл с неверным модулем макросов отклоняется (D-055)") {
+  const auto addMacros = [](json& file, uint64_t id) {
+    file["modules"].push_back({ { "id", id }, { "type", "macros" }, { "typeVersion", 1 } });
+  };
+
+  this->checkRejected([&addMacros](json& file) { addMacros(file, 50); });
+  this->checkRejected([&addMacros](json& file) { addMacros(file, 0); addMacros(file, 0); });
+  this->checkRejected([&addMacros](json& file) {
+    addMacros(file, 0);
+    file["modules"].back()["owner"] = 2;
+  });
+}

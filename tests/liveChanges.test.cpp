@@ -350,6 +350,25 @@ namespace {
   };
 }
 
+TEST_CASE_FIXTURE(DcFixture, "Значение от хоста, уже записанное в модель, не возвращается вдогонку новому (D-056)") {
+  const float first = DC_LEVEL * 0.5f;
+  const float second = DC_LEVEL * 0.25f;
+
+  this->engine.setParameter(this->dc, 0, first);
+  this->run(CHUNK_FRAMES * 30);
+
+  // Главный поток дошёл до первого значения, а хост уже прислал второе
+  this->set(this->dc, "level", first);
+  this->engine.acknowledgeParameter({ this->dc, "level", first });
+  this->engine.setParameter(this->dc, 0, second);
+
+  // Обычная правка рядом со значением хоста посылает изменившиеся параметры модели
+  this->engine.applyModel(*this->model);
+  this->run(CHUNK_FRAMES * 30);
+
+  CHECK(this->run(CHUNK_FRAMES).back() == doctest::Approx(second));
+}
+
 TEST_CASE("Живой режим: первая модель приходит, когда звук уже идёт") {
   LiveFixture fixture;
   const ModuleId dc = fixture.add("live.dc");

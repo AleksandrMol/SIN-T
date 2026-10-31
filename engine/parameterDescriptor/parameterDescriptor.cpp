@@ -1,6 +1,7 @@
 #include "./parameterDescriptor.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 
 namespace {
@@ -64,4 +65,36 @@ float limitReal(const ParameterDescriptor& parameter, float real) {
   const float limited = std::clamp(real, parameter.minValue, parameter.maxValue);
 
   return parameter.isStepped ? std::round(limited) : limited;
+}
+
+std::string formatParameter(const ParameterDescriptor& parameter, float real) {
+  const float magnitude = std::fabs(real);
+  const int decimals = parameter.isStepped || magnitude >= 1000.0f ? 0 : magnitude >= 100.0f ? 1 : magnitude >= 10.0f ? 2 : 3;
+
+  char text[64];
+  const auto written = std::to_chars(text, text + sizeof(text), real, std::chars_format::fixed, decimals);
+  std::string result(text, written.ptr);
+
+  if (!parameter.unit.empty()) {
+    result += " " + parameter.unit;
+  }
+
+  return result;
+}
+
+std::optional<float> parseParameter(const ParameterDescriptor& parameter, std::string_view text) {
+  text.remove_prefix(std::min(text.find_first_not_of(" \t"), text.size()));
+
+  if (text.starts_with('+')) {
+    text.remove_prefix(1);
+  }
+
+  float value = 0.0f;
+  const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+
+  if (parsed.ec != std::errc() || !std::isfinite(value)) {
+    return std::nullopt;
+  }
+
+  return limitReal(parameter, value);
 }

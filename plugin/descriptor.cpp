@@ -19,10 +19,10 @@ extern const clap_plugin_descriptor s_my_plugin_desc = {
   .id = MY_PLUGIN_ID, // ID из константы выше
   .name = "SIN-T", // Имя плагина
   .vendor = "ChillySwim", // Имя разработчика
-  .url = "URL",
+  .url = "",
   .manual_url = "",
   .support_url = "",
   .version = "1.0.0",
-  .description = "Desc",
+  .description = "Modular software synthesizer",
   .features = s_my_plugin_features,
 };

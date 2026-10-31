@@ -52,6 +52,7 @@ add_library(sint_engine STATIC
   engine/filter/filterProcessor.cpp
   engine/generator/generatorProcessor.cpp
   engine/lfo/lfoProcessor.cpp
+  engine/macros/macrosProcessor.cpp
   engine/modulationCompiler/modulationCompiler.cpp
   engine/modulationPlan/modulationPlan.cpp
   engine/moduleCatalog/moduleCatalog.cpp
@@ -62,6 +63,10 @@ add_library(sint_engine STATIC
   engine/parameterDescriptor/parameterDescriptor.cpp
   engine/planExchange/planExchange.cpp
   engine/preset/preset.cpp
+  engine/presetLibrary/presetLibrary.cpp
+  engine/sessionState/sessionState.cpp
+  engine/slotTable/slotInbox.cpp
+  engine/slotTable/slotTable.cpp
   engine/stubProcessor/stubProcessor.cpp
   engine/synthModel/synthModel.cpp
   engine/voicePool/voicePool.cpp
@@ -78,6 +83,7 @@ add_library(sint_plugin_objects OBJECT
   plugin/extensions.cpp
   plugin/factory.cpp
   plugin/methods.cpp
+  plugin/parameters.cpp
   plugin/process.cpp
 )
 target_link_libraries(sint_plugin_objects PUBLIC sint_engine)
@@ -130,8 +136,11 @@ if(SINT_BUILD_TESTS)
     tests/moduleRegistry.test.cpp
     tests/oscillator.test.cpp
     tests/parameterDescriptor.test.cpp
+    tests/parameters.test.cpp
     tests/polyphony.test.cpp
     tests/preset.test.cpp
+    tests/presetLibrary.test.cpp
+    tests/slotTable.test.cpp
     tests/synthModel.test.cpp
     tests/tools.test.cpp
     tests/voicePool.test.cpp

@@ -112,3 +112,38 @@ TEST_CASE("validateParameter отклоняет некорректные опи�
   CHECK_FALSE(validateParameter(broken(CUTOFF, [](auto& p) { p.minValue = 0.0f; })).has_value());
   CHECK_FALSE(validateParameter(broken(WAVE, [](auto& p) { p.defaultValue = 2.5f; })).has_value());
 }
+
+TEST_CASE("Значение параметра как текст") {
+  CHECK(formatParameter(CUTOFF, 1200.0f) == "1200 Hz");
+  CHECK(formatParameter(CUTOFF, 440.5f) == "440.5 Hz");
+  CHECK(formatParameter(CUTOFF, 44.25f) == "44.25 Hz");
+  CHECK(formatParameter(CUTOFF, 4.5f) == "4.500 Hz");
+  CHECK(formatParameter(WAVE, 3.0f) == "3");
+}
+
+TEST_CASE("Текст значения обратно в число") {
+  CHECK(parseParameter(CUTOFF, "1200 Hz") == 1200.0f);
+  CHECK(parseParameter(CUTOFF, "  1200") == 1200.0f);
+  CHECK(parseParameter(CUTOFF, "+1200") == 1200.0f);
+
+  // Вне диапазона ограничивается, как и любое другое значение
+  CHECK(parseParameter(CUTOFF, "1000000") == CUTOFF.maxValue);
+  CHECK(parseParameter(WAVE, "2.4") == 2.0f);
+
+  CHECK_FALSE(parseParameter(CUTOFF, "").has_value());
+  CHECK_FALSE(parseParameter(CUTOFF, "Hz").has_value());
+  CHECK_FALSE(parseParameter(CUTOFF, "nan").has_value());
+}
+
+TEST_CASE("Текст значения устойчив к переводу туда и обратно") {
+  for (const ParameterDescriptor* parameter : { &GAIN, &CUTOFF, &WAVE }) {
+    for (float position = 0.0f; position <= 1.0f; position += 0.01f) {
+      const std::string text = formatParameter(*parameter, toReal(*parameter, position));
+      const auto parsed = parseParameter(*parameter, text);
+
+      CAPTURE(text);
+      REQUIRE(parsed.has_value());
+      CHECK(formatParameter(*parameter, *parsed) == text);
+    }
+  }
+}

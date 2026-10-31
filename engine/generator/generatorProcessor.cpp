@@ -99,8 +99,12 @@ void GeneratorProcessor::noteOn(
   }
 }
 
-void GeneratorProcessor::noteOff(const NoteAddress& note) {
-  this->pool.noteOff(note);
+void GeneratorProcessor::noteOff(const NoteAddress& note, const SustainPedals& pedals) {
+  this->pool.noteOff(note, pedals);
+}
+
+void GeneratorProcessor::releaseSustained(int16_t channel) {
+  this->pool.releaseSustained(channel);
 }
 
 void GeneratorProcessor::choke(const NoteAddress& note) {

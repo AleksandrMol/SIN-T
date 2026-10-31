@@ -858,7 +858,7 @@ TEST_CASE_FIXTURE(PolyFixture, "Пресет по умолчанию: рабоч
 
   std::sort(types.begin(), types.end());
 
-  CHECK(types == std::vector<std::string>{ "amp", "env", "filter", "generator", "oscillator", "output", "voiceOutput" });
+  CHECK(types == std::vector<std::string>{ "amp", "env", "filter", "generator", "macros", "oscillator", "output", "voiceOutput" });
   CHECK(model->getRoutes().size() == 1);
 
   this->engine.applyModel(*model);

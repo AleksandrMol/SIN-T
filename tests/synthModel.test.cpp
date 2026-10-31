@@ -6,8 +6,10 @@
 
 #include "./modelFixture.h"
 
-TEST_CASE_FIXTURE(Fixture, "Новая модель содержит только выход") {
-  REQUIRE(this->model->getModules().size() == 1);
+TEST_CASE_FIXTURE(Fixture, "Новая модель содержит только выход и макросы") {
+  REQUIRE(this->model->getModules().size() == 2);
+  REQUIRE(this->model->findModule(MACROS_MODULE_ID) != nullptr);
+  CHECK(this->model->findModule(MACROS_MODULE_ID)->descriptor == &MACROS_DESCRIPTOR);
 
   const ModuleInstance* output = this->model->findModule(this->model->getOutputId());
 
@@ -550,4 +552,28 @@ TEST_CASE("Переход между моделями: провод, образ�
 
   CHECK(next.scheme.getConnections() == std::vector<Connection>{ reversed });
   CHECK(next.settled == *fixture.model);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Макросы создаются сами, их нельзя создать, удалить и отключить (D-055)") {
+  this->checkRejected(AddModule{ "macros" });
+  this->checkRejected(RemoveModule{ MACROS_MODULE_ID });
+  this->checkRejected(SetModuleEnabled{ MACROS_MODULE_ID, false });
+
+  CHECK(this->model->apply(SetModuleEnabled{ MACROS_MODULE_ID, true }).has_value());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Макрос управляет параметром любой зоны (D-011, D-055)") {
+  const ModuleId generator = this->add("generator");
+  const ModuleId filter = this->add("test.filter", generator);
+  const ModuleId lfo = this->add("test.lfo");
+
+  CHECK(this->model->apply(AddRoute{ { { MACROS_MODULE_ID, "macro1" }, { filter, "cutoff" }, 1.0f } }).has_value());
+  CHECK(this->model->apply(AddRoute{ { { MACROS_MODULE_ID, "macro8" }, { lfo, "rate" }, 1.0f } }).has_value());
+  CHECK_FALSE(this->model->apply(AddRoute{ { { MACROS_MODULE_ID, "macro9" }, { lfo, "rate" }, 1.0f } }).has_value());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Значение макроса меняется как обычный параметр и ограничивается (D-055)") {
+  REQUIRE(this->model->apply(SetParameter{ MACROS_MODULE_ID, "macro3", 2.0f }).has_value());
+
+  CHECK(this->model->findModule(MACROS_MODULE_ID)->parameters.at("macro3") == 1.0f);
 }

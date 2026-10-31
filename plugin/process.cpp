@@ -59,8 +59,12 @@ clap_process_status my_plugin_process(
 
   instance->engine.process(left + done, right + done, totalFrames - done);
 
-  // Освобождать память и продолжать переход должен главный поток
-  if (instance->engine.takeUpdateRequest()) {
+  // Освобождать память и продолжать переход должен главный поток, значения слотов ждёт модель.
+  // Два вопроса вычисляются оба: каждый снимает свой флаг
+  const bool isUpdateRequested = instance->engine.takeUpdateRequest();
+  const bool isSlotSyncRequested = instance->slotInbox.takeRequest();
+
+  if (isUpdateRequested || isSlotSyncRequested) {
     instance->host->request_callback(instance->host);
   }
 

@@ -126,6 +126,7 @@ struct ExecutionPlan {
   std::vector<PlanGenerator> generators;
   std::vector<ModuleProcessor*> sharedModulators; // Глобальные экземпляры общих модуляторов (D-005)
   std::map<ModuleId, std::span<BaseValue>> bases; // Адреса базовых значений всех модулей
+  std::vector<SlotTarget> slotTargets; // Куда ведут слоты хоста: аудиопоток не видит таблицу модели (D-011)
 
   std::map<Connection, PlanFade> wireFades;
   std::map<ModuleId, PlanFade> moduleFades;

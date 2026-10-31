@@ -309,3 +309,80 @@ TEST_CASE("Лимит голосов ограничен пределом, под
   CHECK(pool.getVoices().size() == MAX_VOICE_SLOTS);
   CHECK(pool.getVoices().data() == voices);
 }
+
+TEST_CASE("Педаль держит голос нажатым, пока её не отпустят (D-058)") {
+  VoicePool pool = createPool(4);
+  SustainPedals pedals{};
+  pedals[0] = true;
+
+  const uint32_t slot = pool.noteOn(note(60), 1.0f);
+
+  pool.noteOff(note(60), pedals);
+
+  CHECK(pool.getVoices()[slot].stage == VOICE_STAGE::HELD);
+  CHECK(pool.getVoices()[slot].isSustained);
+
+  pool.releaseSustained(1);
+  CHECK(pool.getVoices()[slot].stage == VOICE_STAGE::HELD);
+
+  pool.releaseSustained(0);
+  CHECK(pool.getVoices()[slot].stage == VOICE_STAGE::RELEASED);
+}
+
+TEST_CASE("Отпускание педали не трогает клавиши, которые всё ещё нажаты (D-058)") {
+  VoicePool pool = createPool(4);
+  SustainPedals pedals{};
+  pedals[0] = true;
+
+  const uint32_t pressed = pool.noteOn(note(60), 1.0f);
+  const uint32_t sustained = pool.noteOn(note(64), 1.0f);
+
+  pool.noteOff(note(64), pedals);
+  pool.releaseSustained(0);
+
+  CHECK(pool.getVoices()[pressed].stage == VOICE_STAGE::HELD);
+  CHECK(pool.getVoices()[sustained].stage == VOICE_STAGE::RELEASED);
+}
+
+TEST_CASE("Педаль действует только на свой канал (D-058)") {
+  VoicePool pool = createPool(4);
+  SustainPedals pedals{};
+  pedals[1] = true;
+
+  const uint32_t slot = pool.noteOn(note(60), 1.0f);
+
+  pool.noteOff(note(60), pedals);
+
+  CHECK(pool.getVoices()[slot].stage == VOICE_STAGE::RELEASED);
+}
+
+TEST_CASE("Перехват: голос под педалью уходит раньше нажатой клавиши, но позже отпущенного (D-042, D-058)") {
+  VoicePool pool = createPool(3);
+  SustainPedals pedals{};
+  pedals[0] = true;
+
+  const uint32_t pressed = pool.noteOn(note(60), 1.0f);
+  const uint32_t sustained = pool.noteOn(note(62), 1.0f);
+  const uint32_t released = pool.noteOn(note(64), 1.0f);
+
+  pool.noteOff(note(62), pedals);
+  pool.noteOff(note(64));
+
+  pool.noteOn(note(65), 1.0f);
+  CHECK(pool.getVoices()[released].stage == VOICE_STAGE::FADING);
+  CHECK(pool.getVoices()[sustained].stage == VOICE_STAGE::HELD);
+
+  pool.noteOn(note(67), 1.0f);
+  CHECK(pool.getVoices()[sustained].stage == VOICE_STAGE::FADING);
+  CHECK(pool.getVoices()[pressed].stage == VOICE_STAGE::HELD);
+}
+
+TEST_CASE("Канал вне MIDI педали не имеет") {
+  SustainPedals pedals{};
+  pedals.fill(true);
+
+  CHECK(isPedalDown(pedals, 0));
+  CHECK(isPedalDown(pedals, 15));
+  CHECK_FALSE(isPedalDown(pedals, -1));
+  CHECK_FALSE(isPedalDown(pedals, 16));
+}
