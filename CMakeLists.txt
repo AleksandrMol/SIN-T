@@ -40,12 +40,14 @@ add_library(sint_engine STATIC
   engine/builtinModules/builtinModules.cpp
   engine/defaultPreset/defaultPreset.cpp
   engine/engine/engine.cpp
-  engine/envelope/envelope.cpp
+  engine/env/envProcessor.cpp
   engine/executionPlan/executionPlan.cpp
   engine/filter/filter.cpp
   engine/filter/filterProcessor.cpp
   engine/generator/generatorProcessor.cpp
-  engine/lfo/lfo.cpp
+  engine/lfo/lfoProcessor.cpp
+  engine/modulationCompiler/modulationCompiler.cpp
+  engine/modulationPlan/modulationPlan.cpp
   engine/moduleCatalog/moduleCatalog.cpp
   engine/moduleDescriptor/moduleDescriptor.cpp
   engine/moduleRegistry/moduleRegistry.cpp
@@ -114,8 +116,9 @@ if(SINT_BUILD_TESTS)
     tests/allocationCounter.cpp
     tests/clapPlugin.test.cpp
     tests/engine.test.cpp
-    tests/envelope.test.cpp
     tests/filter.test.cpp
+    tests/modulation.test.cpp
+    tests/modulators.test.cpp
     tests/moduleRegistry.test.cpp
     tests/oscillator.test.cpp
     tests/parameterDescriptor.test.cpp

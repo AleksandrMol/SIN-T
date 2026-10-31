@@ -66,3 +66,4 @@ const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char
 
 // EVENTS
 void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t *event_header);
+void my_plug_apply_transport(MyPluginInstance *instance, const clap_event_transport_t *transport);

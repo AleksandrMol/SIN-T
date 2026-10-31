@@ -123,6 +123,10 @@ namespace {
       .try_push = [](const clap_output_events_t*, const clap_event_header_t*) { return true; },
     };
 
+    clap_event_transport_t transport{};
+    transport.flags = CLAP_TRANSPORT_HAS_TEMPO;
+    transport.tempo = settings.tempo;
+
     audio.left.assign(settings.frameCount, 0.0f);
     audio.right.assign(settings.frameCount, 0.0f);
 
@@ -149,6 +153,7 @@ namespace {
       process.audio_outputs_count = 1;
       process.in_events = &inEvents;
       process.out_events = &outEvents;
+      process.transport = settings.tempo > 0.0 ? &transport : nullptr;
 
       if (plugin->process(plugin, &process) == CLAP_PROCESS_ERROR) {
         return false;

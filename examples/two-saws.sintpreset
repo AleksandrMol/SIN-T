@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextModuleId": 7,
+  "nextModuleId": 9,
   "modules": [
     { "id": 1, "type": "output", "typeVersion": 1 },
     { "id": 2, "type": "generator", "typeVersion": 1 },
@@ -25,13 +25,34 @@
       "typeVersion": 1,
       "owner": 2,
       "parameters": { "cutoff": 1500 }
+    },
+    {
+      "id": 7,
+      "type": "amp",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "gain": 0 }
+    },
+    {
+      "id": 8,
+      "type": "env",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "attack": 0.01, "decay": 0.4, "sustain": 0.6, "release": 0.3 }
     }
   ],
   "connections": [
     { "fromModule": 4, "fromPort": "out", "toModule": 6, "toPort": "in" },
     { "fromModule": 5, "fromPort": "out", "toModule": 6, "toPort": "in" },
-    { "fromModule": 6, "fromPort": "out", "toModule": 3, "toPort": "in" },
+    { "fromModule": 6, "fromPort": "out", "toModule": 7, "toPort": "in" },
+    { "fromModule": 7, "fromPort": "out", "toModule": 3, "toPort": "in" },
     { "fromModule": 2, "fromPort": "out", "toModule": 1, "toPort": "in" }
   ],
-  "routes": []
+  "routes": [
+    {
+      "source": { "module": 8, "output": "out" },
+      "target": { "module": 7, "parameter": "gain" },
+      "depth": 1
+    }
+  ]
 }

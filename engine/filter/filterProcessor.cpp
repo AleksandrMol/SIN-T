@@ -51,7 +51,7 @@ void FilterProcessor::process(const ProcessChunk& chunk) {
   const ParameterRamp alpha = { this->left.getAlpha(cutoff.start), this->left.getAlpha(cutoff.end) };
 
   for (uint32_t frame = 0; frame < chunk.frames; frame++) {
-    const float value = alpha.at(frame, chunk.frames);
+    const float value = chunk.at(alpha, frame);
 
     output.left[frame] = this->left.calculateOut(input.left[frame], value);
     output.right[frame] = this->right.calculateOut(input.right[frame], value);

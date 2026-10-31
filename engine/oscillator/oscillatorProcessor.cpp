@@ -96,8 +96,8 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   };
 
   for (uint32_t frame = 0; frame < chunk.frames; frame++) {
-    this->oscillator.setFreq(frequency.at(frame, chunk.frames));
-    this->oscillator.setVolume(level.at(frame, chunk.frames));
+    this->oscillator.setFreq(chunk.at(frequency, frame));
+    this->oscillator.setVolume(chunk.at(level, frame));
     this->oscillator.doSample();
 
     output.left[frame] = this->oscillator.currentSample;

@@ -50,8 +50,8 @@ void AmpProcessor::process(const ProcessChunk& chunk) {
   AudioBuffer& output = *chunk.outputs[0];
 
   for (uint32_t frame = 0; frame < chunk.frames; frame++) {
-    const float amount = sensitivity.at(frame, chunk.frames);
-    const float value = gain.at(frame, chunk.frames) * (1.0f - amount + amount * chunk.voice->velocity);
+    const float amount = chunk.at(sensitivity, frame);
+    const float value = chunk.at(gain, frame) * (1.0f - amount + amount * chunk.voice->velocity);
 
     output.left[frame] = input.left[frame] * value;
     output.right[frame] = input.right[frame] * value;

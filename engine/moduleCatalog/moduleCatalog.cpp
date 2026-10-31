@@ -2,7 +2,9 @@
 
 #include "../amp/ampProcessor.h"
 #include "../builtinModules/builtinModules.h"
+#include "../env/envProcessor.h"
 #include "../filter/filterProcessor.h"
+#include "../lfo/lfoProcessor.h"
 #include "../oscillator/oscillatorProcessor.h"
 
 std::expected<void, std::string> addAllModules(ModuleRegistry& registry) {
@@ -10,7 +12,13 @@ std::expected<void, std::string> addAllModules(ModuleRegistry& registry) {
     return result;
   }
 
-  for (const ModuleDescriptor* descriptor : { &OSCILLATOR_DESCRIPTOR, &FILTER_DESCRIPTOR, &AMP_DESCRIPTOR }) {
+  for (const ModuleDescriptor* descriptor : {
+    &OSCILLATOR_DESCRIPTOR,
+    &FILTER_DESCRIPTOR,
+    &AMP_DESCRIPTOR,
+    &ENV_DESCRIPTOR,
+    &LFO_DESCRIPTOR,
+  }) {
     if (const auto result = registry.add(descriptor); !result) {
       return result;
     }

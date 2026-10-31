@@ -39,6 +39,7 @@ struct VoiceContext {
   float pitch; // Номер ноты MIDI, дробный: уже с учётом pitch bend
   float velocity; // 0..1
   float pitchBend; // Положение колеса -1..1: глобальное значение (D-027)
+  bool gate; // Клавиша нажата
 };
 
 /**
@@ -47,6 +48,8 @@ struct VoiceContext {
  */
 struct ProcessChunk {
   uint32_t frames;
+  uint32_t rampOffset; // Положение начала куска внутри участка, на который рассчитаны значения параметров
+  uint32_t rampFrames; // Длина этого участка
   uint32_t inputCount;
   uint32_t outputCount;
   const AudioBuffer* const* inputs;
@@ -54,6 +57,25 @@ struct ProcessChunk {
   const ParameterRamp* parameters;
   const VoiceContext* voice;
   const GraphPlan* subgraph; // План подграфа. Есть только у генератора
+
+  /**
+   * Значение на сэмпле куска. Зависит только от положения сэмпла на сетке, а не от того,
+   * как блок хоста разрезал участок, поэтому звук не зависит от буфера DAW (D-008)
+   */
+  float at(const ParameterRamp& ramp, uint32_t frame) const {
+    return ramp.at(this->rampOffset + frame, this->rampFrames);
+  }
+};
+
+/**
+ * Всё, что модулятор получает на один участок. Параметры идут в порядке его описания
+ */
+struct ModulationChunk {
+  uint32_t frames; // Сколько сэмплов пройти. 0 — начало ноты: только выдать начальное значение
+  const ParameterRamp* parameters;
+  const VoiceContext* voice;
+  float tempo; // BPM
+  float* outputs; // Значения выходов модуляции на конце участка, в порядке описания
 };
 
 /**
@@ -79,4 +101,17 @@ class ModuleProcessor {
      * Обрабатывает кусок. Вызывается из аудиопотока: без блокировок и выделения памяти
      */
     virtual void process(const ProcessChunk& chunk) = 0;
+
+    /**
+     * Продвигает модулятор и записывает значения его выходов. Вызывается из аудиопотока
+     * перед обработкой звука (D-009). Модуль без выходов модуляции его не переопределяет
+     */
+    virtual void modulate(const ModulationChunk&) {}
+
+    /**
+     * Закончил ли голосовой модулятор работу. Голос завершается, когда закончили все, что на него влияют (D-051)
+     */
+    virtual bool isFinished() const {
+      return true;
+    }
 };

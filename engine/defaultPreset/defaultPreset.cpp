@@ -40,8 +40,9 @@ std::expected<SynthModel, std::string> createDefaultModel(const ModuleRegistry* 
   const auto oscillator = add("oscillator", *generator);
   const auto filter = add("filter", *generator);
   const auto amp = add("amp", *generator);
+  const auto env = add("env", *generator);
 
-  if (!oscillator || !filter || !amp) {
+  if (!oscillator || !filter || !amp || !env) {
     return std::unexpected("в реестре нет модулей пресета по умолчанию");
   }
 
@@ -52,6 +53,16 @@ std::expected<SynthModel, std::string> createDefaultModel(const ModuleRegistry* 
     { *generator, "out", model.getOutputId(), "in" },
   }) {
     if (const CommandResult result = model.apply(Connect{ connection }); !result) {
+      return std::unexpected(result.error());
+    }
+  }
+
+  // Вклады складываются (D-025): при базе 1 маршрут упёрся бы в ограничение и не был бы слышен
+  for (const Command& command : std::initializer_list<Command>{
+    SetParameter{ *amp, "gain", 0.0f },
+    AddRoute{ { { *env, "out" }, { *amp, "gain" }, 1.0f } },
+  }) {
+    if (const CommandResult result = model.apply(command); !result) {
       return std::unexpected(result.error());
     }
   }

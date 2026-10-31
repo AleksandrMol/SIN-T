@@ -13,6 +13,12 @@ struct NoteAddress {
   int16_t key;
 };
 
+/**
+ * Подходит ли нота под адрес события. Нота без note_id подходит под любой:
+ * хост мог выдать ID только в одном из событий пары, а зависшая нота хуже лишнего совпадения
+ */
+bool matchesNote(const NoteAddress& event, const NoteAddress& note);
+
 enum class VOICE_STAGE {
   IDLE, // Свободен
   HELD, // Клавиша нажата
@@ -70,6 +76,11 @@ class VoicePool {
     void clear();
 
     const std::vector<VoiceState>& getVoices() const;
+
+    /**
+     * Слот голоса с самой поздней нотой среди звучащих или -1, если голосов нет (D-004)
+     */
+    int findLastPressed() const;
 
   private:
     uint32_t limit = 0;

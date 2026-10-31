@@ -858,7 +858,8 @@ TEST_CASE_FIXTURE(PolyFixture, "Пресет по умолчанию: рабоч
 
   std::sort(types.begin(), types.end());
 
-  CHECK(types == std::vector<std::string>{ "amp", "filter", "generator", "oscillator", "output", "voiceOutput" });
+  CHECK(types == std::vector<std::string>{ "amp", "env", "filter", "generator", "oscillator", "output", "voiceOutput" });
+  CHECK(model->getRoutes().size() == 1);
 
   this->engine.applyModel(*model);
 
@@ -869,6 +870,15 @@ TEST_CASE_FIXTURE(PolyFixture, "Пресет по умолчанию: рабоч
   const float loud = peak(this->run(2000));
 
   this->engine.noteOff(note(60));
+
+  // Release 200 мс: голос ещё слышен, спадает и освобождается (D-051). Базовый gain равен 0,
+  // иначе вклад ENV упёрся бы в ограничение и спада не было бы слышно (D-025)
+  CHECK(peak(this->run(4800)) > 0.0f);
+
+  this->run(2400);
+
+  CHECK(peak(this->run(2400)) < loud * 0.5f);
+
   this->run(SETTLE_FRAMES);
 
   CHECK(loud > 0.01f);

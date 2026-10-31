@@ -55,6 +55,7 @@ struct ModuleDescriptor {
   std::vector<ModOutputDescriptor> modOutputs{};
   std::vector<ParameterDescriptor> parameters{};
   bool isAllowedInPoly = false;
+  bool isVoiceModulator = false; // Живёт нотой: в главном графе это общий модулятор (D-005, D-048)
   MODULE_ROLE role = MODULE_ROLE::REGULAR;
   ProcessorFactory createProcessor = nullptr; // Без неё модуль ведёт себя как заглушка D-021
 };

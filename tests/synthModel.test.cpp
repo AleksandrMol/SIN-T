@@ -331,6 +331,22 @@ TEST_CASE_FIXTURE(Fixture, "Правила модуляции между зон�
   }
 }
 
+TEST_CASE_FIXTURE(Fixture, "Velocity подчиняется правилам голосового модулятора (D-004, D-027)") {
+  const ModuleId generator = this->add("generator");
+  const ModuleId other = this->add("generator");
+  const ModuleId localFilter = this->add("test.filter", generator);
+  const ModuleId otherFilter = this->add("test.filter", other);
+  const ModuleId mainFilter = this->add("test.filter");
+
+  const auto velocityRoute = [generator](ModuleId target) {
+    return AddRoute{ { { generator, "velocity" }, { target, "cutoff" }, 1.0f } };
+  };
+
+  CHECK(this->model->apply(velocityRoute(localFilter)).has_value());
+  CHECK(this->model->apply(velocityRoute(mainFilter)).has_value());
+  this->checkRejected(velocityRoute(otherFilter));
+}
+
 TEST_CASE_FIXTURE(Fixture, "Параметры самого генератора относятся к его зоне") {
   // Тестовый генератор с модулируемым параметром: у встроенного таких пока нет
   const ModuleDescriptor generatorWithLevel = [] {

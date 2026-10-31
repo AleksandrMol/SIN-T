@@ -20,6 +20,7 @@ const ModuleDescriptor GENERATOR_DESCRIPTOR = {
   .type = "generator",
   .name = "Generator",
   .outputs = { { "out", "Out" } },
+  .modOutputs = { { "velocity", "Velocity", MOD_POLARITY::UNIPOLAR } },
   .parameters = {
     {
       .key = "polyphony",

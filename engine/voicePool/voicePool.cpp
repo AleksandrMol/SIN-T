@@ -5,17 +5,6 @@
 namespace {
   constexpr uint32_t SLOTS_PER_VOICE = 2;
 
-  /**
-   * Подходит ли голос под адрес события. Адрес голоса без note_id подходит под любой:
-   * хост мог выдать ID только в одном из событий пары, а зависшая нота хуже лишнего совпадения
-   */
-  bool matches(const NoteAddress& event, const NoteAddress& voice) {
-    return (event.noteId == -1 || voice.noteId == -1 || event.noteId == voice.noteId)
-      && (event.port == -1 || event.port == voice.port)
-      && (event.channel == -1 || event.channel == voice.channel)
-      && (event.key == -1 || event.key == voice.key);
-  }
-
   bool isSounding(const VoiceState& voice) {
     return voice.stage == VOICE_STAGE::HELD || voice.stage == VOICE_STAGE::RELEASED;
   }
@@ -34,6 +23,13 @@ namespace {
 
     return oldest;
   }
+}
+
+bool matchesNote(const NoteAddress& event, const NoteAddress& note) {
+  return (event.noteId == -1 || note.noteId == -1 || event.noteId == note.noteId)
+    && (event.port == -1 || event.port == note.port)
+    && (event.channel == -1 || event.channel == note.channel)
+    && (event.key == -1 || event.key == note.key);
 }
 
 VoicePool::VoicePool() {
@@ -65,7 +61,7 @@ uint32_t VoicePool::noteOn(const NoteAddress& note, float velocity) {
 
 void VoicePool::noteOff(const NoteAddress& note) {
   for (VoiceState& voice : this->voices) {
-    if (voice.stage == VOICE_STAGE::HELD && matches(note, voice.note)) {
+    if (voice.stage == VOICE_STAGE::HELD && matchesNote(note, voice.note)) {
       voice.stage = VOICE_STAGE::RELEASED;
     }
   }
@@ -73,7 +69,7 @@ void VoicePool::noteOff(const NoteAddress& note) {
 
 void VoicePool::choke(const NoteAddress& note) {
   for (VoiceState& voice : this->voices) {
-    if (isSounding(voice) && matches(note, voice.note)) {
+    if (isSounding(voice) && matchesNote(note, voice.note)) {
       voice.stage = VOICE_STAGE::FADING;
     }
   }
@@ -99,6 +95,20 @@ void VoicePool::clear() {
 
 const std::vector<VoiceState>& VoicePool::getVoices() const {
   return this->voices;
+}
+
+int VoicePool::findLastPressed() const {
+  int last = -1;
+
+  for (size_t slot = 0; slot < this->voices.size(); slot++) {
+    const VoiceState& voice = this->voices[slot];
+
+    if (voice.stage != VOICE_STAGE::IDLE && (last < 0 || voice.order > this->voices[(size_t)last].order)) {
+      last = (int)slot;
+    }
+  }
+
+  return last;
 }
 
 uint32_t VoicePool::countSounding() const {

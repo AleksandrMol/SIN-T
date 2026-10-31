@@ -26,6 +26,9 @@ namespace {
   constexpr uint32_t FADE_FRAMES = 10 * SAMPLE_RATE / 1000;
   constexpr uint32_t CHUNK_FRAMES = 32;
 
+  // Release огибающей пресета по умолчанию: 200 мс
+  constexpr uint32_t RELEASE_FRAMES = 200 * SAMPLE_RATE / 1000;
+
   // Нота A4, 440 Гц
   constexpr int16_t KEY_A4 = 69;
 
@@ -320,10 +323,10 @@ TEST_CASE("Порты: один стерео-выход и один нотный
   plugin->destroy(plugin);
 }
 
-TEST_CASE("Нота звучит с точностью до сэмпла и затихает после отпускания (D-043)") {
+TEST_CASE("Нота звучит с точностью до сэмпла и затихает после release (D-051)") {
   const uint32_t startFrame = 1000;
   const uint32_t endFrame = 24000;
-  const uint32_t silenceFrame = endFrame + FADE_FRAMES + CHUNK_FRAMES;
+  const uint32_t silenceFrame = endFrame + RELEASE_FRAMES + FADE_FRAMES + 2 * CHUNK_FRAMES;
 
   const StereoBuffer audio = renderOffline(
     { { .key = 60, .startFrame = startFrame, .endFrame = endFrame } },
@@ -337,7 +340,7 @@ TEST_CASE("Нота звучит с точностью до сэмпла и за
   CHECK(audio.left[startFrame + 1] != 0.0f);
   CHECK(peak(audio.left, startFrame, endFrame) > 0.01f);
   CHECK(peak(audio.left, startFrame, endFrame) < 1.0f);
-  CHECK(peak(audio.left, endFrame, endFrame + FADE_FRAMES) > 0.0f);
+  CHECK(peak(audio.left, endFrame + RELEASE_FRAMES - FADE_FRAMES, endFrame + RELEASE_FRAMES) > 0.0f);
   CHECK(isSilent(audio.left, silenceFrame, (uint32_t)audio.left.size()));
   CHECK(audio.left == audio.right);
 }
@@ -692,8 +695,139 @@ TEST_CASE("Работающий плагин не принимает новый 
   CHECK(fixture.save() == buildPreset(2000.0f));
 }
 
-TEST_CASE("Пример пресета из examples/ загружается и звучит") {
-  std::ifstream file(SINT_EXAMPLES_DIR "/two-saws.sintpreset", std::ios::binary);
+namespace {
+  /**
+   * Нота, которую LFO главного графа открывает и закрывает меандром с периодом в четверть
+   */
+  std::string buildSyncedGatePreset() {
+    ModuleRegistry registry;
+
+    REQUIRE(addAllModules(registry).has_value());
+
+    SynthModel model(&registry);
+
+    const auto add = [&model](const char* type, std::optional<ModuleId> owner = std::nullopt) {
+      return **model.apply(AddModule{ type, owner });
+    };
+
+    const ModuleId generator = add("generator");
+    const ModuleId osc = add("oscillator", generator);
+    const ModuleId amp = add("amp");
+    const ModuleId lfo = add("lfo");
+
+    ModuleId voiceOutput = 0;
+
+    for (const auto& [id, module] : model.getModules()) {
+      if (module.owner == generator && module.descriptor->role == MODULE_ROLE::OUTPUT) {
+        voiceOutput = id;
+      }
+    }
+
+    for (const Command& command : std::initializer_list<Command>{
+      Connect{ { osc, "out", voiceOutput, "in" } },
+      Connect{ { generator, "out", amp, "in" } },
+      Connect{ { amp, "out", model.getOutputId(), "in" } },
+      SetParameter{ amp, "gain", 0.0f },
+      SetParameter{ lfo, "wave", 3.0f },
+      SetParameter{ lfo, "sync", 1.0f },
+      AddRoute{ { { lfo, "out" }, { amp, "gain" }, 1.0f } },
+    }) {
+      REQUIRE(model.apply(command).has_value());
+    }
+
+    return saveModel(model);
+  }
+
+  /**
+   * Сколько раз звук появился после тишины. Конец рендера не считается:
+   * туда попадает начало следующего периода
+   */
+  int countBursts(const std::vector<float>& channel) {
+    constexpr uint32_t WINDOW = 480;
+
+    int bursts = 0;
+    bool wasLoud = false;
+
+    for (uint32_t from = 0; from + 3 * WINDOW <= channel.size(); from += WINDOW) {
+      const bool isLoud = peak(channel, from, from + WINDOW) > 0.001f;
+
+      bursts += isLoud && !wasLoud ? 1 : 0;
+      wasLoud = isLoud;
+    }
+
+    return bursts;
+  }
+}
+
+TEST_CASE("Темп из транспорта задаёт скорость LFO с синхронизацией (D-050)") {
+  const uint32_t frameCount = 2 * SAMPLE_RATE;
+  const std::string preset = buildSyncedGatePreset();
+  const std::vector<OfflineNote> notes = { { .key = KEY_A4, .startFrame = 0, .endFrame = frameCount } };
+
+  double tempo = 0.0;
+  int bursts = 0;
+
+  // За 2 секунды при 120 BPM проходит 4 четверти
+  SUBCASE("Хост без транспорта: 120 BPM") {
+    tempo = 0.0;
+    bursts = 4;
+  }
+
+  SUBCASE("60 BPM") {
+    tempo = 60.0;
+    bursts = 2;
+  }
+
+  SUBCASE("240 BPM") {
+    tempo = 240.0;
+    bursts = 8;
+  }
+
+  const StereoBuffer audio = renderOffline(notes, { .frameCount = frameCount, .preset = preset, .tempo = tempo });
+
+  REQUIRE(audio.left.size() == frameCount);
+  CHECK(countBursts(audio.left) == bursts);
+}
+
+TEST_CASE("Транспорт без темпа даёт темп по умолчанию, событие транспорта меняет темп (D-050)") {
+  PluginFixture fixture;
+
+  REQUIRE(fixture.load(buildSyncedGatePreset()));
+  fixture.start();
+
+  clap_event_transport_t transport{};
+  transport.header.size = sizeof(clap_event_transport_t);
+  transport.header.time = 0;
+  transport.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+  transport.header.type = CLAP_EVENT_TRANSPORT;
+  transport.flags = CLAP_TRANSPORT_HAS_TEMPO;
+  transport.tempo = 240.0;
+
+  const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+
+  SUBCASE("С темпом") {
+    CHECK(countBursts(fixture.process(2 * SAMPLE_RATE, { &transport.header, &on.header })) == 8);
+  }
+
+  SUBCASE("Флага темпа нет") {
+    transport.flags = 0;
+
+    CHECK(countBursts(fixture.process(2 * SAMPLE_RATE, { &transport.header, &on.header })) == 4);
+  }
+}
+
+TEST_CASE("Примеры пресетов из examples/ загружаются и звучат") {
+  std::string path = SINT_EXAMPLES_DIR;
+
+  SUBCASE("Две пилы") {
+    path += "/two-saws.sintpreset";
+  }
+
+  SUBCASE("Демонстрация модуляции") {
+    path += "/modulation-demo.sintpreset";
+  }
+
+  std::ifstream file(path, std::ios::binary);
   std::ostringstream content;
 
   REQUIRE(file.good());

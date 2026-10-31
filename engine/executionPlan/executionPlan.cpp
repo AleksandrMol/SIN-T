@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "../generator/generatorProcessor.h"
+#include "../modulationCompiler/modulationCompiler.h"
 #include "../stubProcessor/stubProcessor.h"
 
 namespace {
@@ -137,16 +138,48 @@ namespace {
     }
   }
 
-  void syncGraph(const SynthModel& model, std::optional<ModuleId> owner, ModuleSlots& slots, float sampleRate) {
-    std::erase_if(slots, [&model](const auto& slot) {
-      return model.findModule(slot.first) == nullptr;
-    });
+  bool isSharedModulator(const ModuleInstance& module) {
+    return !module.owner && module.descriptor->isVoiceModulator;
+  }
+
+  /**
+   * Модули графа без его выхода. Генератору к подграфу добавляются общие модуляторы, от которых
+   * зависят его модули, напрямую или через другие общие модуляторы: им нужно состояние на голос (D-005)
+   */
+  std::set<ModuleId> findMembers(const SynthModel& model, std::optional<ModuleId> owner) {
+    std::set<ModuleId> members;
 
     for (const auto& [id, module] : model.getModules()) {
-      if (module.owner != owner || module.descriptor->role == MODULE_ROLE::OUTPUT) {
-        continue;
+      if (module.owner == owner && module.descriptor->role != MODULE_ROLE::OUTPUT) {
+        members.insert(id);
       }
+    }
 
+    std::vector<ModuleId> pending(members.begin(), members.end());
+
+    while (!pending.empty()) {
+      const ModuleId current = pending.back();
+      pending.pop_back();
+
+      for (const ModRoute& route : model.getRoutes()) {
+        if (route.target.module == current
+          && isSharedModulator(*model.findModule(route.source.module))
+          && members.insert(route.source.module).second) {
+          pending.push_back(route.source.module);
+        }
+      }
+    }
+
+    return members;
+  }
+
+  void syncGraph(const SynthModel& model, const std::set<ModuleId>& members, ModuleSlots& slots, float sampleRate) {
+    std::erase_if(slots, [&members](const auto& slot) {
+      return !members.contains(slot.first);
+    });
+
+    for (const ModuleId id : members) {
+      const ModuleInstance& module = *model.findModule(id);
       ModuleSlot& slot = slots[id];
 
       if (slot.descriptor != module.descriptor) {
@@ -162,11 +195,24 @@ namespace {
         slot.parameters.push_back({ value, value });
       }
 
+      slot.modOutputs.resize(module.descriptor->modOutputs.size());
+
       if (slot.generator) {
         slot.generator->setPolyphony((uint32_t)module.parameters.at("polyphony"));
 
+        const std::set<ModuleId> voiceMembers = findMembers(model, id);
+
         for (ModuleSlots& voice : slot.generator->getVoiceSlots()) {
-          syncGraph(model, id, voice, sampleRate);
+          syncGraph(model, voiceMembers, voice, sampleRate);
+        }
+
+        std::map<ModuleId, std::vector<float>>& lastOutputs = slot.generator->getLastOutputs();
+
+        lastOutputs.clear();
+        lastOutputs[id].resize(module.descriptor->modOutputs.size());
+
+        for (const ModuleId member : voiceMembers) {
+          lastOutputs[member].resize(model.findModule(member)->descriptor->modOutputs.size());
         }
       }
     }
@@ -207,6 +253,8 @@ namespace {
 
       PlanStep step = { .mixes = {}, .inputs = {}, .outputs = outputs[id], .subgraph = nullptr };
 
+      graph.modules.push_back(id);
+
       for (size_t voice = 0; voice < voices.size(); voice++) {
         ModuleSlot* slot = isOutput ? nullptr : &voices[voice]->at(id);
         ModuleProcessor* processor = slot ? slot->processor.get() : nullptr;
@@ -230,8 +278,8 @@ namespace {
         compileGraph(model, findVoiceOutput(model, id), generatorVoices, *subgraph, plan);
 
         step.subgraph = subgraph.get();
+        plan.generators.push_back({ id, generator, subgraph.get(), voices[0]->at(id).parameters.data() });
         plan.subgraphs.push_back(std::move(subgraph));
-        plan.generators.push_back(generator);
       }
 
       std::vector<std::vector<const AudioBuffer*>> sources(descriptor->inputs.size());
@@ -269,18 +317,19 @@ namespace {
 }
 
 void syncModuleSlots(const SynthModel& model, ModuleSlots& slots, float sampleRate) {
-  syncGraph(model, std::nullopt, slots, sampleRate);
+  syncGraph(model, findMembers(model, std::nullopt), slots, sampleRate);
 }
 
-std::unique_ptr<ExecutionPlan> compilePlan(const SynthModel& model, ModuleSlots& slots) {
+std::unique_ptr<ExecutionPlan> compilePlan(const SynthModel& model, ModuleSlots& slots, ParameterBases& bases) {
   auto plan = std::make_unique<ExecutionPlan>();
 
   compileGraph(model, model.getOutputId(), { &slots }, plan->main, *plan);
+  compileModulation(model, slots, bases, *plan);
 
   return plan;
 }
 
-void runGraph(const GraphPlan& graph, uint32_t voice, uint32_t frames, const VoiceContext& context) {
+void runGraph(const GraphPlan& graph, uint32_t voice, const ChunkSpan& span, const VoiceContext& context) {
   const std::vector<StepBinding>& bindings = graph.voices[voice];
 
   for (size_t index = 0; index < graph.steps.size(); index++) {
@@ -288,12 +337,14 @@ void runGraph(const GraphPlan& graph, uint32_t voice, uint32_t frames, const Voi
     const StepBinding& binding = bindings[index];
 
     for (const PlanMix& mix : step.mixes) {
-      mixInputs(mix, frames);
+      mixInputs(mix, span.frames);
     }
 
     if (binding.processor) {
       binding.processor->process({
-        .frames = frames,
+        .frames = span.frames,
+        .rampOffset = span.rampOffset,
+        .rampFrames = span.rampFrames,
         .inputCount = (uint32_t)step.inputs.size(),
         .outputCount = (uint32_t)step.outputs.size(),
         .inputs = step.inputs.data(),

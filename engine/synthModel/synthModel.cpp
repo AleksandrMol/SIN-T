@@ -316,9 +316,10 @@ std::expected<void, std::string> SynthModel::validateRoute(const ModSource& sour
     return std::unexpected("параметр \"" + target.parameter + "\" не модулируется");
   }
 
+  const std::optional<ModuleId> sourceZone = getZone(*sourceModule);
   const std::optional<ModuleId> targetZone = getZone(*targetModule);
 
-  if (sourceModule->owner && targetZone && sourceModule->owner != targetZone) {
+  if (sourceZone && targetZone && sourceZone != targetZone) {
     return std::unexpected("голосовой модулятор не может управлять параметром другого генератора");
   }
 

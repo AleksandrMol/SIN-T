@@ -42,6 +42,8 @@ clap_process_status my_plugin_process(
   const uint32_t eventCount = process->in_events->size(process->in_events);
   uint32_t done = 0;
 
+  my_plug_apply_transport(instance, process->transport);
+
   // Звук до события считается отдельно: так нота начинается точно в свой сэмпл (D-008)
   for (uint32_t index = 0; index < eventCount; index++) {
     const clap_event_header_t* event = process->in_events->get(process->in_events, index);

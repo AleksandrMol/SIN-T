@@ -21,6 +21,7 @@ struct OfflineRenderSettings {
   uint32_t sampleRate = 48000;
   uint32_t blockSize = 256;
   std::string preset = {}; // JSON, передаётся плагину как состояние. Пусто — ничего не загружать
+  double tempo = 0.0; // BPM. 0 — хост без транспорта
 };
 
 /**

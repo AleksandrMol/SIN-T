@@ -32,6 +32,15 @@ namespace {
 }
 
 /**
+ * Темп для LFO с синхронизацией. Хост может не иметь транспорта или не сообщать темп (D-050)
+ */
+void my_plug_apply_transport(MyPluginInstance *instance, const clap_event_transport_t *transport) {
+  const bool hasTempo = transport && (transport->flags & CLAP_TRANSPORT_HAS_TEMPO);
+
+  instance->engine.setTempo(hasTempo ? (float)transport->tempo : DEFAULT_TEMPO);
+}
+
+/**
  * Функция для обработки событий
  */
 void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t *event_header) {
@@ -89,8 +98,7 @@ void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t
         }
 
         case CLAP_EVENT_TRANSPORT: {
-          // const clap_event_transport_t *ev = (const clap_event_transport_t *)event_header;
-          // TODO: handle transport event
+          my_plug_apply_transport(instance, (const clap_event_transport_t *)event_header);
           break;
         }
 

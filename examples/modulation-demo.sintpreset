@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "nextModuleId": 10,
+  "modules": [
+    { "id": 1, "type": "output", "typeVersion": 1 },
+    { "id": 2, "type": "generator", "typeVersion": 1 },
+    { "id": 3, "type": "voiceOutput", "typeVersion": 1, "owner": 2 },
+    {
+      "id": 4,
+      "type": "oscillator",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "wave": 3, "level": 0.3 }
+    },
+    {
+      "id": 5,
+      "type": "filter",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "cutoff": 400 }
+    },
+    {
+      "id": 6,
+      "type": "amp",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "gain": 0 }
+    },
+    {
+      "id": 7,
+      "type": "env",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "attack": 0.02, "decay": 0.4, "sustain": 0.6, "release": 0.8 }
+    },
+    {
+      "id": 8,
+      "type": "lfo",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "rate": 5 }
+    },
+    {
+      "id": 9,
+      "type": "lfo",
+      "typeVersion": 1,
+      "parameters": { "wave": 1, "sync": 1, "division": 7 }
+    }
+  ],
+  "connections": [
+    { "fromModule": 4, "fromPort": "out", "toModule": 5, "toPort": "in" },
+    { "fromModule": 5, "fromPort": "out", "toModule": 6, "toPort": "in" },
+    { "fromModule": 6, "fromPort": "out", "toModule": 3, "toPort": "in" },
+    { "fromModule": 2, "fromPort": "out", "toModule": 1, "toPort": "in" }
+  ],
+  "routes": [
+    {
+      "source": { "module": 7, "output": "out" },
+      "target": { "module": 6, "parameter": "gain" },
+      "depth": 1
+    },
+    {
+      "source": { "module": 8, "output": "out" },
+      "target": { "module": 4, "parameter": "fine" },
+      "depth": 0.1
+    },
+    {
+      "source": { "module": 9, "output": "out" },
+      "target": { "module": 5, "parameter": "cutoff" },
+      "depth": 0.25
+    }
+  ]
+}
