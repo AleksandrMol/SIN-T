@@ -1,6 +1,8 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -16,6 +18,7 @@ namespace {
     double tail = 1.5;
     uint32_t sampleRate = 48000;
     uint32_t blockSize = 256;
+    std::string presetPath;
   };
 
   template <typename T>
@@ -67,6 +70,7 @@ namespace {
         name == "--tail" ? parseNumber(value, options.tail) :
         name == "--rate" ? parseNumber(value, options.sampleRate) :
         name == "--block" ? parseNumber(value, options.blockSize) :
+        name == "--preset" ? (options.presetPath = value, true) :
         false;
 
       if (!isValid) {
@@ -80,6 +84,16 @@ namespace {
       && options.sampleRate > 0
       && options.blockSize > 0;
   }
+
+  bool readFile(const std::string& path, std::string& text) {
+    std::ifstream file(path, std::ios::binary);
+    std::ostringstream content;
+
+    content << file.rdbuf();
+    text = content.str();
+
+    return file.good();
+  }
 }
 
 int main(int argc, char** argv) {
@@ -87,8 +101,15 @@ int main(int argc, char** argv) {
 
   if (!parseOptions(argc, argv, options)) {
     std::fprintf(stderr,
-      "Использование: sint_render <файл.wav> [--keys 60,64,67] [--hold сек] [--tail сек] [--rate Гц] [--block сэмплов]\n");
+      "Использование: sint_render <файл.wav> [--keys 60,64,67] [--hold сек] [--tail сек] [--rate Гц] [--block сэмплов] [--preset файл]\n");
     return 2;
+  }
+
+  std::string preset;
+
+  if (!options.presetPath.empty() && !readFile(options.presetPath, preset)) {
+    std::fprintf(stderr, "Не удалось прочитать %s\n", options.presetPath.c_str());
+    return 1;
   }
 
   const uint32_t holdFrames = (uint32_t)std::lround(options.hold * options.sampleRate);
@@ -103,10 +124,11 @@ int main(int argc, char** argv) {
     .frameCount = holdFrames + tailFrames,
     .sampleRate = options.sampleRate,
     .blockSize = options.blockSize,
+    .preset = preset,
   });
 
   if (audio.left.empty()) {
-    std::fprintf(stderr, "Рендер не удался: пустой результат\n");
+    std::fprintf(stderr, "Рендер не удался: плагин вернул ошибку или отверг пресет\n");
     return 1;
   }
 

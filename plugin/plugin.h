@@ -4,7 +4,12 @@
 #include "../clap/plugin-features.h"
 #include "../clap/version.h"
 #include "../clap/clap.h"
+#include "../engine/engine/engine.h"
 #include "../engine/generator/generator.h"
+#include "../engine/moduleRegistry/moduleRegistry.h"
+#include "../engine/synthModel/synthModel.h"
+
+#include <optional>
 
 // Фабрика плагина
 extern const clap_plugin_factory s_my_plugin_factory;
@@ -27,7 +32,15 @@ struct MyPluginInstance {
 
   float sample_rate; // Частота дискретизации
 
+  bool isActive; // Меняется только на главном потоке
+
   Generator gen;
+
+  // Новый движок. Работает вместо gen, только если загружен граф: до этапа 3 в нём нет нот
+  ModuleRegistry registry;
+  std::optional<SynthModel> model;
+  Engine engine;
+  bool useGraph;
 };
 
 // Методы CLAP

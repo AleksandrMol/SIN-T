@@ -3,11 +3,19 @@
 #include <math.h>
 
 #include "../clap/plugin.h"
+#include "../engine/moduleCatalog/moduleCatalog.h"
 #include "./plugin.h"
 
 // Колбэк инициализации конкретного инстанса плагина
 bool my_plugin_init(const struct clap_plugin *plugin) {
-  // Тут можно выделить память под внутренние нужды плагина, если необходимо
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  if (!addAllModules(instance->registry)) {
+    return false;
+  }
+
+  instance->model.emplace(&instance->registry);
+
   return true;
 }
 
@@ -30,11 +38,17 @@ bool my_plugin_activate(
 
   instance->sample_rate = (float)sample_rate; // Сохраняем частоту дискретизации
   instance->gen.setSampleRate((float)sample_rate);
+  instance->engine.prepare((float)sample_rate);
+  instance->isActive = true;
 
   return true;
 }
 
-void my_plugin_deactivate(const struct clap_plugin *plugin) {}
+void my_plugin_deactivate(const struct clap_plugin *plugin) {
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  instance->isActive = false;
+}
 
 void my_plug_reset(const struct clap_plugin *plugin) {}
 

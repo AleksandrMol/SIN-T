@@ -20,13 +20,21 @@ void Filter::setCutoff(uint32_t cutoff) {
 }
 
 void Filter::calculateAlpha() {
-  this->alpha = 1.0f - std::exp(
-    -2.0f * std::numbers::pi_v<float> * this->cutoff / this->sampleRate
+  this->alpha = this->getAlpha((float)this->cutoff);
+};
+
+float Filter::getAlpha(float cutoff) const {
+  return 1.0f - std::exp(
+    -2.0f * std::numbers::pi_v<float> * cutoff / this->sampleRate
   );
 };
 
 float Filter::calculateOut(float in) {
-  float output = this->previousOut + this->alpha * (in - this->previousOut);
+  return this->calculateOut(in, this->alpha);
+};
+
+float Filter::calculateOut(float in, float alpha) {
+  float output = this->previousOut + alpha * (in - this->previousOut);
   this->previousOut = output;
   return output;
 };

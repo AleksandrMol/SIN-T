@@ -1,0 +1,84 @@
+#pragma once
+
+#include <expected>
+#include <map>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "../command/command.h"
+#include "../modelTypes/modelTypes.h"
+#include "../moduleRegistry/moduleRegistry.h"
+
+/**
+ * Модель синтезатора: модули, соединения и маршруты модуляции. Только данные, без DSP.
+ *
+ * Хранилище плоское: модули подграфов лежат в той же таблице, что и модули главного графа,
+ * и отличаются полем owner. Поэтому все графы проверяются одним кодом, а модель
+ * копируется целиком: загрузка пресета собирает копию и потом подменяет текущую (D-020).
+ *
+ * Используется только на главном потоке (D-023). Изменяется только через apply (D-030).
+ */
+class SynthModel {
+  public:
+    /**
+     * Реестр должен жить дольше модели
+     */
+    explicit SynthModel(const ModuleRegistry* registry);
+
+    /**
+     * Выполняет команду. При ошибке модель не меняется
+     */
+    CommandResult apply(const Command& command);
+
+    const std::map<ModuleId, ModuleInstance>& getModules() const;
+    const std::vector<Connection>& getConnections() const;
+
+    /**
+     * Маршруты в порядке создания: от него зависит разрыв циклов модуляции (D-010)
+     */
+    const std::vector<ModRoute>& getRoutes() const;
+
+    ModuleId getOutputId() const;
+
+    /**
+     * ID, который получит следующий модуль. Сохраняется в пресете, чтобы ID не повторялись
+     */
+    ModuleId getNextId() const;
+
+    /**
+     * Возвращает модуль или nullptr, если такого нет
+     */
+    const ModuleInstance* findModule(ModuleId id) const;
+
+    bool operator==(const SynthModel&) const = default;
+
+  private:
+    // Загрузка собирает новую модель, а не меняет существующую: ей нужно восстановить модули
+    // с их постоянными ID (D-011). Соединения и маршруты она проводит через обычные команды
+    friend std::expected<SynthModel, std::string> loadModel(const ModuleRegistry* registry, std::string_view text);
+
+    const ModuleRegistry* registry;
+    std::map<ModuleId, ModuleInstance> modules;
+    std::vector<Connection> connections;
+    std::vector<ModRoute> routes;
+    ModuleId outputId;
+    ModuleId nextId = 1;
+
+    ModuleId createModule(const ModuleDescriptor* descriptor, std::optional<ModuleId> owner);
+    void insertModule(ModuleId id, const ModuleDescriptor* descriptor, std::optional<ModuleId> owner);
+    bool hasAudioPath(ModuleId from, ModuleId to) const;
+    std::expected<void, std::string> validateRoute(const ModSource& source, const ModTarget& target) const;
+    std::vector<ModRoute>::iterator findRoute(const ModSource& source, const ModTarget& target);
+
+    CommandResult execute(const AddModule& command);
+    CommandResult execute(const RemoveModule& command);
+    CommandResult execute(const Connect& command);
+    CommandResult execute(const Disconnect& command);
+    CommandResult execute(const SetParameter& command);
+    CommandResult execute(const SetModuleEnabled& command);
+    CommandResult execute(const AddRoute& command);
+    CommandResult execute(const RemoveRoute& command);
+    CommandResult execute(const SetRouteDepth& command);
+};

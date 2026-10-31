@@ -1,6 +1,7 @@
 #include "./offlineHost.h"
 
 #include <algorithm>
+#include <cstring>
 
 #include "../../clap/clap.h"
 
@@ -68,6 +69,39 @@ namespace {
       return &((BlockEvents*)list->ctx)->events[index].header;
     }
   };
+
+  /**
+   * Передаёт плагину пресет так же, как DAW передаёт сохранённое состояние проекта
+   */
+  bool loadPreset(const clap_plugin_t* plugin, const std::string& preset) {
+    struct ReadPosition {
+      const std::string& text;
+      size_t offset;
+    };
+
+    const auto* state = (const clap_plugin_state_t*)plugin->get_extension(plugin, CLAP_EXT_STATE);
+
+    if (!state) {
+      return false;
+    }
+
+    ReadPosition position = { preset, 0 };
+
+    const clap_istream_t stream = {
+      .ctx = &position,
+      .read = [](const clap_istream_t* source, void* buffer, uint64_t size) -> int64_t {
+        auto* reader = (ReadPosition*)source->ctx;
+        const size_t count = std::min((size_t)size, reader->text.size() - reader->offset);
+
+        std::memcpy(buffer, reader->text.data() + reader->offset, count);
+        reader->offset += count;
+
+        return (int64_t)count;
+      },
+    };
+
+    return state->load(plugin, &stream);
+  }
 
   bool processAll(
     const clap_plugin_t* plugin,
@@ -139,7 +173,7 @@ StereoBuffer renderOffline(const std::vector<OfflineNote>& notes, const OfflineR
   if (plugin) {
     bool rendered = false;
 
-    if (plugin->init(plugin)) {
+    if (plugin->init(plugin) && (settings.preset.empty() || loadPreset(plugin, settings.preset))) {
       if (plugin->activate(plugin, settings.sampleRate, 1, settings.blockSize)) {
         if (plugin->start_processing(plugin)) {
           rendered = processAll(plugin, notes, settings, audio);

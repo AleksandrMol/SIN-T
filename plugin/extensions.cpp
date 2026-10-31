@@ -1,6 +1,8 @@
 #include <cstdio>
 #include "./plugin.h"
+#include "../engine/preset/preset.h"
 #include <cstring>
+#include <string>
 
 // /////////////////////////////
 // // clap_plugin_audio_ports //
@@ -81,12 +83,65 @@ extern const clap_plugin_latency_t s_my_plug_latency = {
 // ////////////////
 
 bool my_plug_state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream) {
-  // TODO: write the state into stream
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  const std::string text = saveModel(*instance->model);
+  size_t written = 0;
+
+  // Поток может принять только часть данных за один вызов
+  while (written < text.size()) {
+    const int64_t count = stream->write(stream, text.data() + written, text.size() - written);
+
+    if (count <= 0) {
+      return false;
+    }
+
+    written += (size_t)count;
+  }
+
   return true;
 }
 
 bool my_plug_state_load(const clap_plugin_t *plugin, const clap_istream_t *stream) {
-  // TODO: read the state from stream
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  std::string text;
+  char chunk[4096];
+
+  while (true) {
+    const int64_t count = stream->read(stream, chunk, sizeof(chunk));
+
+    if (count < 0) {
+      return false;
+    }
+
+    if (count == 0) {
+      break;
+    }
+
+    text.append(chunk, (size_t)count);
+  }
+
+  auto loaded = loadModel(&instance->registry, text);
+
+  if (!loaded) {
+    return false;
+  }
+
+  // То же состояние менять незачем: DAW может вернуть его и работающему плагину
+  if (*loaded == *instance->model) {
+    return true;
+  }
+
+  // Подмены плана во время звука пока нет (этап 5), а process идёт, только пока плагин активен
+  if (instance->isActive) {
+    return false;
+  }
+
+  instance->model = std::move(*loaded);
+  instance->engine.applyModel(*instance->model);
+  instance->useGraph = true;
+
   return true;
 }
 
@@ -104,10 +159,11 @@ const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char
   if (!strcmp(id, CLAP_EXT_NOTE_PORTS))
     return &s_my_plug_note_ports;
 
+  if (!strcmp(id, CLAP_EXT_STATE))
+    return &s_my_plug_state;
+
   // if (!strcmp(id, CLAP_EXT_LATENCY))
   //   return &s_my_plug_latency;
-  // if (!strcmp(id, CLAP_EXT_STATE))
-  //   return &s_my_plug_state;
 
   return NULL;
 }

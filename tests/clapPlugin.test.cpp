@@ -1,12 +1,22 @@
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <initializer_list>
+#include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include "../clap/clap.h"
+#include "../engine/filter/filterProcessor.h"
+#include "../engine/moduleCatalog/moduleCatalog.h"
+#include "../engine/oscillator/oscillatorProcessor.h"
+#include "../engine/preset/preset.h"
+#include "../engine/synthModel/synthModel.h"
 #include "../tools/offlineHost/offlineHost.h"
 
 namespace {
@@ -38,6 +48,135 @@ namespace {
 
     return result;
   }
+
+  int countRisingCrossings(const std::vector<float>& channel) {
+    int crossings = 0;
+
+    for (size_t i = 1; i < channel.size(); i++) {
+      if (channel[i - 1] < 0.0f && channel[i] >= 0.0f) {
+        crossings++;
+      }
+    }
+
+    return crossings;
+  }
+
+  /**
+   * Пресет: синус заданной частоты идёт через фильтр на выход
+   */
+  std::string buildPreset(float frequency, float cutoff = 20000.0f, bool isFilterEnabled = true) {
+    ModuleRegistry registry;
+    REQUIRE(addAllModules(registry).has_value());
+
+    SynthModel model(&registry);
+    const ModuleId osc = **model.apply(AddModule{ "oscillator" });
+    const ModuleId filter = **model.apply(AddModule{ "filter" });
+
+    for (const Command& command : std::initializer_list<Command>{
+      SetParameter{ osc, "wave", 1.0f },
+      SetParameter{ osc, "frequency", frequency },
+      SetParameter{ osc, "level", 0.5f },
+      SetParameter{ filter, "cutoff", cutoff },
+      SetModuleEnabled{ filter, isFilterEnabled },
+      Connect{ { osc, "out", filter, "in" } },
+      Connect{ { filter, "out", model.getOutputId(), "in" } },
+    }) {
+      REQUIRE(model.apply(command).has_value());
+    }
+
+    return saveModel(model);
+  }
+
+  /**
+   * Поток чтения, отдающий данные мелкими порциями: CLAP этого не запрещает
+   */
+  struct ChunkedReader {
+    std::string text;
+    size_t chunkSize;
+    bool shouldFail = false;
+    size_t offset = 0;
+    clap_istream_t stream = { .ctx = this, .read = ChunkedReader::read };
+
+    static int64_t read(const clap_istream_t* source, void* buffer, uint64_t size) {
+      auto* reader = (ChunkedReader*)source->ctx;
+
+      if (reader->shouldFail) {
+        return -1;
+      }
+
+      const size_t count = std::min({ (size_t)size, reader->chunkSize, reader->text.size() - reader->offset });
+
+      std::memcpy(buffer, reader->text.data() + reader->offset, count);
+      reader->offset += count;
+
+      return (int64_t)count;
+    }
+  };
+
+  /**
+   * Поток записи, принимающий данные мелкими порциями
+   */
+  struct ChunkedWriter {
+    size_t chunkSize;
+    bool shouldFail = false;
+    std::string text = {};
+    clap_ostream_t stream = { .ctx = this, .write = ChunkedWriter::write };
+
+    static int64_t write(const clap_ostream_t* target, const void* buffer, uint64_t size) {
+      auto* writer = (ChunkedWriter*)target->ctx;
+
+      if (writer->shouldFail) {
+        return -1;
+      }
+
+      const size_t count = std::min((size_t)size, writer->chunkSize);
+
+      writer->text.append((const char*)buffer, count);
+
+      return (int64_t)count;
+    }
+  };
+
+  /**
+   * Инициализированный плагин без рендера, для проверки состояния
+   */
+  struct PluginFixture {
+    clap_host_t host{};
+    const clap_plugin_t* plugin = nullptr;
+    const clap_plugin_state_t* state = nullptr;
+
+    PluginFixture() {
+      const clap_plugin_factory_t* factory = getFactory();
+
+      this->host.clap_version = CLAP_VERSION;
+      this->plugin = factory->create_plugin(factory, &this->host, factory->get_plugin_descriptor(factory, 0)->id);
+
+      REQUIRE(this->plugin != nullptr);
+      REQUIRE(this->plugin->init(this->plugin));
+
+      this->state = (const clap_plugin_state_t*)this->plugin->get_extension(this->plugin, CLAP_EXT_STATE);
+
+      REQUIRE(this->state != nullptr);
+    }
+
+    ~PluginFixture() {
+      this->plugin->destroy(this->plugin);
+    }
+
+    bool load(const std::string& text, size_t chunkSize = 4096) {
+      ChunkedReader reader = { .text = text, .chunkSize = chunkSize };
+
+      return this->state->load(this->plugin, &reader.stream);
+    }
+
+    std::string save() {
+      ChunkedWriter writer = { .chunkSize = 4096 };
+
+      REQUIRE(this->state->save(this->plugin, &writer.stream));
+
+      return writer.text;
+    }
+  };
 }
 
 TEST_CASE("Дескриптор содержит постоянный ID и теги инструмента") {
@@ -134,4 +273,143 @@ TEST_CASE("Рендер одинаков при повторе и при люб�
     CAPTURE(blockSize);
     CHECK(renderOffline(notes, { .frameCount = frameCount, .blockSize = blockSize }).left == reference.left);
   }
+}
+
+TEST_CASE("Загруженный граф звучит через CLAP (D-032)") {
+  const StereoBuffer audio = renderOffline({}, {
+    .frameCount = SAMPLE_RATE,
+    .sampleRate = SAMPLE_RATE,
+    .preset = buildPreset(1000.0f),
+  });
+
+  REQUIRE(audio.left.size() == SAMPLE_RATE);
+
+  CHECK(std::abs(countRisingCrossings(audio.left) - 1000) <= 1);
+  CHECK(peak(audio.left, 0, SAMPLE_RATE) > 0.3f);
+  CHECK(audio.left == audio.right);
+}
+
+TEST_CASE("Отключённый модуль из пресета пропускает сигнал через CLAP (D-040)") {
+  const StereoBuffer filtered = renderOffline({}, {
+    .frameCount = 4800,
+    .sampleRate = SAMPLE_RATE,
+    .preset = buildPreset(5000.0f, 20.0f),
+  });
+  const StereoBuffer bypassed = renderOffline({}, {
+    .frameCount = 4800,
+    .sampleRate = SAMPLE_RATE,
+    .preset = buildPreset(5000.0f, 20.0f, false),
+  });
+
+  CHECK(peak(filtered.left, 0, 4800) < 0.05f);
+  CHECK(peak(bypassed.left, 0, 4800) > 0.3f);
+}
+
+TEST_CASE("Частота дискретизации хоста доходит до модулей графа") {
+  const uint32_t sampleRate = 96000;
+
+  const StereoBuffer audio = renderOffline({}, {
+    .frameCount = sampleRate,
+    .sampleRate = sampleRate,
+    .preset = buildPreset(1000.0f),
+  });
+
+  REQUIRE(audio.left.size() == sampleRate);
+
+  CHECK(std::abs(countRisingCrossings(audio.left) - 1000) <= 1);
+}
+
+TEST_CASE("Звук графа через CLAP не зависит от размера блока") {
+  const std::string preset = buildPreset(1234.0f);
+  const uint32_t frameCount = 9000;
+
+  const StereoBuffer reference = renderOffline({}, { .frameCount = frameCount, .blockSize = 256, .preset = preset });
+  REQUIRE(reference.left.size() == frameCount);
+
+  for (const uint32_t blockSize : { 1u, 37u, 1024u }) {
+    CAPTURE(blockSize);
+    CHECK(renderOffline({}, { .frameCount = frameCount, .blockSize = blockSize, .preset = preset }).left == reference.left);
+  }
+}
+
+TEST_CASE("Без загруженного графа плагин играет ноты по-старому") {
+  // Стартовое состояние совпадает с пустой моделью, поэтому движок не переключается
+  PluginFixture fixture;
+  const std::string initial = fixture.save();
+
+  const OfflineRenderSettings settings = { .frameCount = 4800, .preset = initial };
+  const StereoBuffer audio = renderOffline({ { .key = 60, .startFrame = 0, .endFrame = 4800 } }, settings);
+
+  REQUIRE(audio.left.size() == 4800);
+  CHECK(peak(audio.left, 0, 4800) > 0.01f);
+}
+
+TEST_CASE("Плагин отвергает неверный пресет и остаётся в прежнем состоянии") {
+  PluginFixture fixture;
+  const std::string initial = fixture.save();
+
+  CHECK_FALSE(fixture.load("not a preset"));
+  CHECK_FALSE(fixture.load(""));
+  CHECK_FALSE(fixture.load("{\"version\": 999}"));
+  CHECK(fixture.save() == initial);
+
+  CHECK(renderOffline({}, { .frameCount = 100, .preset = "not a preset" }).left.empty());
+}
+
+TEST_CASE("Состояние сохраняется и восстанавливается через потоки CLAP") {
+  const std::string preset = buildPreset(440.0f);
+
+  PluginFixture source;
+
+  // Потоки могут работать мелкими порциями
+  REQUIRE(source.load(preset, 3));
+  CHECK(source.save() == preset);
+
+  ChunkedWriter writer = { .chunkSize = 5 };
+  REQUIRE(source.state->save(source.plugin, &writer.stream));
+  CHECK(writer.text == preset);
+
+  PluginFixture restored;
+  REQUIRE(restored.load(writer.text));
+  CHECK(restored.save() == preset);
+}
+
+TEST_CASE("Ошибка потока отклоняет сохранение и загрузку") {
+  PluginFixture fixture;
+
+  ChunkedReader reader = { .text = buildPreset(440.0f), .chunkSize = 4096, .shouldFail = true };
+  CHECK_FALSE(fixture.state->load(fixture.plugin, &reader.stream));
+
+  ChunkedWriter writer = { .chunkSize = 4096, .shouldFail = true };
+  CHECK_FALSE(fixture.state->save(fixture.plugin, &writer.stream));
+}
+
+TEST_CASE("Работающий плагин не принимает новый граф, но принимает своё же состояние") {
+  PluginFixture fixture;
+  const std::string preset = buildPreset(440.0f);
+
+  REQUIRE(fixture.load(preset));
+  REQUIRE(fixture.plugin->activate(fixture.plugin, SAMPLE_RATE, 1, 256));
+
+  CHECK(fixture.load(preset));
+  CHECK_FALSE(fixture.load(buildPreset(880.0f)));
+  CHECK(fixture.save() == preset);
+
+  fixture.plugin->deactivate(fixture.plugin);
+
+  CHECK(fixture.load(buildPreset(880.0f)));
+  CHECK(fixture.save() == buildPreset(880.0f));
+}
+
+TEST_CASE("Пример пресета из examples/ загружается и звучит") {
+  std::ifstream file(SINT_EXAMPLES_DIR "/two-saws.sintpreset", std::ios::binary);
+  std::ostringstream content;
+
+  REQUIRE(file.good());
+  content << file.rdbuf();
+
+  const StereoBuffer audio = renderOffline({}, { .frameCount = 4800, .preset = content.str() });
+
+  REQUIRE(audio.left.size() == 4800);
+  CHECK(peak(audio.left, 0, 4800) > 0.01f);
 }

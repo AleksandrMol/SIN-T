@@ -38,6 +38,12 @@ clap_process_status my_plugin_process(
     return CLAP_PROCESS_CONTINUE;
   }
 
+  if (instance->useGraph) {
+    instance->engine.process(process->audio_outputs[0].data32[0], process->audio_outputs[0].data32[1], total_frames);
+
+    return CLAP_PROCESS_CONTINUE;
+  }
+
   // Цикл по каждому сэмплу в текущем аудио-блоке
   for (uint32_t frame = 0; frame < total_frames; ++frame) {
 

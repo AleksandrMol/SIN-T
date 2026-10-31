@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "nextModuleId": 5,
+  "modules": [
+    { "id": 1, "type": "output", "typeVersion": 1 },
+    {
+      "id": 2,
+      "type": "oscillator",
+      "typeVersion": 1,
+      "parameters": { "wave": 3, "frequency": 110, "level": 0.3 }
+    },
+    {
+      "id": 3,
+      "type": "oscillator",
+      "typeVersion": 1,
+      "parameters": { "wave": 3, "frequency": 110.7, "level": 0.3 }
+    },
+    {
+      "id": 4,
+      "type": "filter",
+      "typeVersion": 1,
+      "parameters": { "cutoff": 900 }
+    }
+  ],
+  "connections": [
+    { "fromModule": 2, "fromPort": "out", "toModule": 4, "toPort": "in" },
+    { "fromModule": 3, "fromPort": "out", "toModule": 4, "toPort": "in" },
+    { "fromModule": 4, "fromPort": "out", "toModule": 1, "toPort": "in" }
+  ],
+  "routes": []
+}

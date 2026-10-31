@@ -23,19 +23,41 @@ else()
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# DSP и модель: без CLAP и без сторонних библиотек (D-002)
+include(FetchContent)
+
+# Зависимости закреплены по версии и контрольной сумме
+FetchContent_Declare(nlohmann_json
+  URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+  URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
+  DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+)
+set(JSON_Install OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(nlohmann_json)
+
+# DSP и модель. DSP без сторонних библиотек (D-002), JSON нужен только пресетам (D-020)
 add_library(sint_engine STATIC
+  engine/builtinModules/builtinModules.cpp
+  engine/engine/engine.cpp
   engine/envelope/envelope.cpp
+  engine/executionPlan/executionPlan.cpp
   engine/filter/filter.cpp
+  engine/filter/filterProcessor.cpp
   engine/generator/generator.cpp
   engine/lfo/lfo.cpp
+  engine/moduleCatalog/moduleCatalog.cpp
+  engine/moduleDescriptor/moduleDescriptor.cpp
+  engine/moduleRegistry/moduleRegistry.cpp
   engine/oscillator/oscillator.cpp
-  engine/parameter/parameter.cpp
-  engine/parameterRegistry/parameterRegistry.cpp
+  engine/oscillator/oscillatorProcessor.cpp
+  engine/parameterDescriptor/parameterDescriptor.cpp
+  engine/preset/preset.cpp
+  engine/stubProcessor/stubProcessor.cpp
+  engine/synthModel/synthModel.cpp
   engine/voice/voice.cpp
   tools/tools.cpp
 )
 target_include_directories(sint_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(sint_engine PRIVATE nlohmann_json::nlohmann_json)
 
 # Слой CLAP. Объектная библиотека: те же файлы идут и в .clap, и в офлайн-рендер с тестами
 add_library(sint_plugin_objects OBJECT
@@ -74,9 +96,7 @@ target_link_libraries(sint_render PRIVATE sint_offline)
 
 if(SINT_BUILD_TESTS)
   include(CTest)
-  include(FetchContent)
 
-  # Зависимость закреплена по версии и контрольной сумме
   FetchContent_Declare(doctest
     URL https://github.com/doctest/doctest/archive/refs/tags/v2.5.3.tar.gz
     URL_HASH SHA256=174ebc4e769928959614789c5b4e9c3d0a0f81a62bb608756b127bfebfb21331
@@ -89,13 +109,20 @@ if(SINT_BUILD_TESTS)
 
   add_executable(sint_tests
     tests/main.cpp
+    tests/allocationCounter.cpp
     tests/clapPlugin.test.cpp
+    tests/engine.test.cpp
     tests/envelope.test.cpp
     tests/filter.test.cpp
+    tests/moduleRegistry.test.cpp
     tests/oscillator.test.cpp
+    tests/parameterDescriptor.test.cpp
+    tests/preset.test.cpp
+    tests/synthModel.test.cpp
     tests/tools.test.cpp
     tests/wav.test.cpp
   )
-  target_link_libraries(sint_tests PRIVATE sint_offline doctest::doctest)
+  target_link_libraries(sint_tests PRIVATE sint_offline doctest::doctest nlohmann_json::nlohmann_json)
+  target_compile_definitions(sint_tests PRIVATE SINT_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
   add_test(NAME sint_tests COMMAND sint_tests)
 endif()
