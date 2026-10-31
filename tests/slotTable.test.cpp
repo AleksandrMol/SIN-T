@@ -5,6 +5,7 @@
 #include "../engine/preset/preset.h"
 #include "../engine/sessionState/sessionState.h"
 #include "../engine/slotTable/slotInbox.h"
+#include "../engine/slotTable/slotOutbox.h"
 #include "../engine/slotTable/slotTable.h"
 #include "./modelFixture.h"
 
@@ -354,4 +355,78 @@ TEST_CASE("Ящик значений отдаёт только последне�
   received.clear();
   inbox.drain(receive);
   CHECK(received.empty());
+}
+
+TEST_CASE_FIXTURE(SlotFixture, "Слот находится по модулю и ключу параметра") {
+  const ModuleId filter = this->add("test.filter");
+
+  this->sync();
+
+  const auto slot = this->table.findSlot(filter, "cutoff");
+
+  REQUIRE(slot.has_value());
+  CHECK(this->table.find(*slot)->descriptor->key == "cutoff");
+  CHECK(this->table.find(*slot)->target.module == filter);
+  CHECK(this->table.findSlot(MACROS_MODULE_ID, "macro1") == 0u);
+  CHECK_FALSE(this->table.findSlot(filter, "нет такого").has_value());
+  CHECK_FALSE(this->table.findSlot(999, "cutoff").has_value());
+}
+
+namespace {
+  struct OutboxEvent {
+    uint32_t slot;
+    OUTBOX_EVENT type;
+    float value;
+
+    bool operator==(const OutboxEvent&) const = default;
+  };
+
+  std::vector<OutboxEvent> drainOutbox(SlotOutbox& outbox) {
+    std::vector<OutboxEvent> events;
+
+    outbox.drain([&events](uint32_t slot, OUTBOX_EVENT type, float value) {
+      events.push_back({ slot, type, value });
+    });
+
+    return events;
+  }
+}
+
+TEST_CASE("SlotOutbox: движение ручки приходит по порядку, важно только последнее значение (D-067)") {
+  SlotOutbox outbox;
+
+  CHECK(drainOutbox(outbox).empty());
+
+  outbox.post(5, 0.1f);
+  outbox.beginGesture(5);
+  outbox.post(5, 0.2f);
+  outbox.post(5, 0.3f);
+  outbox.endGesture(5);
+  outbox.post(9, 0.7f);
+
+  CHECK(drainOutbox(outbox) == std::vector<OutboxEvent>{
+    { 5, OUTBOX_EVENT::GESTURE_BEGIN, 0.0f },
+    { 5, OUTBOX_EVENT::VALUE, 0.3f },
+    { 5, OUTBOX_EVENT::GESTURE_END, 0.0f },
+    { 9, OUTBOX_EVENT::VALUE, 0.7f },
+  });
+
+  CHECK(drainOutbox(outbox).empty());
+}
+
+TEST_CASE("SlotOutbox: движение, начатое до отправки конца прошлого, не закрывается раньше времени (D-067)") {
+  SlotOutbox outbox;
+
+  outbox.beginGesture(5);
+  CHECK(drainOutbox(outbox).size() == 1);
+
+  outbox.endGesture(5);
+  outbox.beginGesture(5);
+  outbox.post(5, 0.4f);
+
+  CHECK(drainOutbox(outbox) == std::vector<OutboxEvent>{ { 5, OUTBOX_EVENT::VALUE, 0.4f } });
+
+  outbox.endGesture(5);
+
+  CHECK(drainOutbox(outbox) == std::vector<OutboxEvent>{ { 5, OUTBOX_EVENT::GESTURE_END, 0.0f } });
 }

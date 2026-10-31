@@ -577,3 +577,55 @@ TEST_CASE_FIXTURE(Fixture, "Значение макроса меняется к�
 
   CHECK(this->model->findModule(MACROS_MODULE_ID)->parameters.at("macro3") == 1.0f);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Положение блока задаётся командой и проверяется (D-065)") {
+  const ModuleId osc = this->add("test.osc");
+
+  CHECK_FALSE(this->model->findModule(osc)->position.has_value());
+
+  CHECK(this->model->apply(SetModulePosition{ osc, { 120.0f, -40.5f } }).has_value());
+  CHECK(this->model->findModule(osc)->position == ModulePosition{ 120.0f, -40.5f });
+
+  this->checkRejected(SetModulePosition{ 999, { 0.0f, 0.0f } });
+  this->checkRejected(SetModulePosition{ osc, { NOT_A_NUMBER, 0.0f } });
+  this->checkRejected(SetModulePosition{ osc, { 0.0f, NOT_A_NUMBER } });
+  this->checkRejected(SetModulePosition{ MACROS_MODULE_ID, { 0.0f, 0.0f } });
+
+  CHECK(this->model->findModule(osc)->position == ModulePosition{ 120.0f, -40.5f });
+}
+
+TEST_CASE_FIXTURE(Fixture, "Проверка соединения и маршрута совпадает с командами и ничего не меняет") {
+  const ModuleId osc = this->add("test.osc");
+  const ModuleId filter = this->add("test.filter");
+  const ModuleId lfo = this->add("test.lfo");
+  const Connection first = { osc, "out", filter, "in" };
+  const ModSource source = { lfo, "out" };
+  const ModTarget target = { filter, "cutoff" };
+  const SynthModel before = *this->model;
+
+  CHECK(this->model->checkConnection(first).has_value());
+  CHECK(this->model->checkRoute(source, target).has_value());
+  CHECK(*this->model == before);
+
+  REQUIRE(this->model->apply(Connect{ first }).has_value());
+  REQUIRE(this->model->apply(AddRoute{ { source, target, 0.5f } }).has_value());
+
+  CHECK(this->model->checkConnection(first).error() == "такое соединение уже есть");
+  CHECK(this->model->checkRoute(source, target).error() == "такой маршрут уже есть");
+  CHECK(this->model->checkConnection({ filter, "out", osc, "in" }).error().find("нет входа") != std::string::npos);
+  CHECK(this->model->checkRoute(source, { filter, "drive" }).error().find("не модулируется") != std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Имя модуля для человека считает номер в своём графе (D-057)") {
+  const ModuleId generator = this->add("generator");
+  const ModuleId first = this->add("test.osc");
+  const ModuleId second = this->add("test.osc");
+  const ModuleId inner = this->add("test.osc", generator);
+
+  CHECK(makeModuleLabel(*this->model, *this->model->findModule(first)) == "Test oscillator 1");
+  CHECK(makeModuleLabel(*this->model, *this->model->findModule(second)) == "Test oscillator 2");
+  CHECK(makeModuleLabel(*this->model, *this->model->findModule(inner)) == "Test oscillator 1");
+
+  REQUIRE(this->model->apply(RemoveModule{ first }).has_value());
+  CHECK(makeModuleLabel(*this->model, *this->model->findModule(second)) == "Test oscillator 1");
+}

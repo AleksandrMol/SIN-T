@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "../builtinModules/builtinModules.h"
@@ -38,6 +40,11 @@ struct SlotInfo {
 };
 
 /**
+ * Имя параметра для человека, с модулем и генератором: «G1 Filter 1 Cutoff» (D-057)
+ */
+std::string makeParameterName(const SynthModel& model, const ModuleInstance& module, const ParameterDescriptor& parameter);
+
+/**
  * Таблица «слот → модуль и параметр» (D-011). Хост видит постоянный список из SLOT_COUNT
  * параметров, таблица решает, что сейчас стоит за каждым номером. Номер слота — это clap_id.
  * Используется только на главном потоке, аудиопоток видит копию адресов в плане
@@ -63,6 +70,11 @@ class SlotTable {
      * Занятый слот или nullptr
      */
     const SlotInfo* find(uint32_t slot) const;
+
+    /**
+     * Слот параметра. Пусто, если слота не хватило: параметр работает, но хост его не видит (D-011)
+     */
+    std::optional<uint32_t> findSlot(ModuleId module, std::string_view parameter) const;
 
     /**
      * Занятые слоты пула: именно они записываются в состояние, макросы постоянны

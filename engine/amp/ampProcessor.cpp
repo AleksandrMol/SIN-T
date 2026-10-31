@@ -33,6 +33,7 @@ const ModuleDescriptor AMP_DESCRIPTOR = {
       .maxValue = 1.0f,
       .defaultValue = 1.0f,
       .isModulatable = true,
+      .shortName = "Vel sens",
     },
   },
   .isAllowedInPoly = true,

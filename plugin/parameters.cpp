@@ -15,6 +15,15 @@ namespace {
     return model.findModule(info.target.module)->parameters.at(info.descriptor->key);
   }
 
+  /**
+   * Значение по умолчанию (D-061). Модуля, созданного в редакторе, в загруженной модели нет
+   */
+  float readDefault(const MyPluginInstance* instance, const SlotInfo& info) {
+    return instance->loadedModel->findModule(info.target.module)
+      ? readValue(*instance->loadedModel, info)
+      : info.descriptor->defaultValue;
+  }
+
   uint32_t my_plug_params_count(const clap_plugin_t *plugin) {
     return SLOT_COUNT;
   }
@@ -35,7 +44,7 @@ namespace {
     info->max_value = 1.0;
 
     if (slot) {
-      info->default_value = toNormalized(*slot->descriptor, readValue(*instance->loadedModel, *slot));
+      info->default_value = toNormalized(*slot->descriptor, readDefault(instance, *slot));
       snprintf(info->name, sizeof(info->name), "%s", slot->name.c_str());
       snprintf(info->module, sizeof(info->module), "%s", slot->path.c_str());
     } else {
@@ -132,6 +141,8 @@ namespace {
       }
     }
 
+    my_plug_send_host_events(instance, out);
+
     if (instance->isActive) {
       my_plug_request_slot_sync(instance);
     } else {
@@ -164,6 +175,38 @@ void my_plug_set_slot(MyPluginInstance *instance, const clap_event_param_value_t
   instance->slotInbox.post(event->param_id, value);
 }
 
+/**
+ * Отдаёт хосту то, что накопил редактор. Вызывается из process и flush: только там можно писать события
+ */
+void my_plug_send_host_events(MyPluginInstance *instance, const clap_output_events_t *out) {
+  instance->slotOutbox.drain([out](uint32_t slot, OUTBOX_EVENT type, float value) {
+    if (type == OUTBOX_EVENT::VALUE) {
+      clap_event_param_value_t event{};
+
+      event.header.size = sizeof(event);
+      event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+      event.header.type = CLAP_EVENT_PARAM_VALUE;
+      event.param_id = slot;
+      event.note_id = -1;
+      event.port_index = -1;
+      event.channel = -1;
+      event.key = -1;
+      event.value = value;
+      out->try_push(out, &event.header);
+
+      return;
+    }
+
+    clap_event_param_gesture_t event{};
+
+    event.header.size = sizeof(event);
+    event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    event.header.type = type == OUTBOX_EVENT::GESTURE_BEGIN ? CLAP_EVENT_PARAM_GESTURE_BEGIN : CLAP_EVENT_PARAM_GESTURE_END;
+    event.param_id = slot;
+    out->try_push(out, &event.header);
+  });
+}
+
 void my_plug_request_slot_sync(MyPluginInstance *instance) {
   if (instance->slotInbox.takeRequest()) {
     instance->host->request_callback(instance->host);
@@ -190,6 +233,8 @@ void my_plug_sync_slot_values(MyPluginInstance *instance) {
       return;
     }
 
+    instance->modelRevision++;
+
     if (slot->descriptor->isStructural || !instance->isActive) {
       isPlanNeeded = true;
     } else {
@@ -210,6 +255,7 @@ void my_plug_replace_state(MyPluginInstance *instance, SessionState state) {
   const SlotTable previous = std::exchange(instance->slots, std::move(state.slots));
 
   instance->presetName = std::move(state.presetName);
+  instance->modelRevision++;
 
   // Модель меняется сразу: хост может тут же сохранить состояние, а звук догонит её сам (D-054)
   instance->model = std::move(state.model);

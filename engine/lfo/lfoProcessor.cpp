@@ -83,6 +83,7 @@ const ModuleDescriptor LFO_DESCRIPTOR = {
       .defaultValue = (float)LFO_WAVE::SINE,
       .isStepped = true,
       .isModulatable = true,
+      .choices = { "Sine", "Triangle", "Saw", "Square" },
     },
     {
       .key = "rate",
@@ -101,6 +102,7 @@ const ModuleDescriptor LFO_DESCRIPTOR = {
       .maxValue = 1.0f,
       .defaultValue = 0.0f,
       .isStepped = true,
+      .choices = { "Off", "On" },
     },
     {
       .key = "division",
@@ -110,6 +112,10 @@ const ModuleDescriptor LFO_DESCRIPTOR = {
       .defaultValue = DIVISION_QUARTER,
       .isStepped = true,
       .isModulatable = true,
+      .choices = {
+        "1/1.", "1/1", "1/2.", "1/1T", "1/2", "1/4.", "1/2T", "1/4", "1/8.", "1/4T",
+        "1/8", "1/16.", "1/8T", "1/16", "1/32.", "1/16T", "1/32", "1/32T",
+      },
     },
   },
   .isAllowedInPoly = true,

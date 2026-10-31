@@ -27,7 +27,13 @@ namespace {
     }
 
     void setParameters(float attack, float decay, float sustain, float release) {
-      this->parameters = { { attack, attack }, { decay, decay }, { sustain, sustain }, { release, release } };
+      this->parameters = { { attack, attack }, { decay, decay }, { sustain, sustain }, { release, release }, {}, {}, {} };
+    }
+
+    void setCurves(float attack, float decay, float release) {
+      this->parameters[4] = { attack, attack };
+      this->parameters[5] = { decay, decay };
+      this->parameters[6] = { release, release };
     }
 
     float advance(uint32_t frames) {
@@ -241,6 +247,134 @@ TEST_CASE("Время ENV не зависит от частоты дискрет
   fixture.env.prepare(SAMPLE_RATE * 2.0f);
 
   CHECK(fixture.advance(480) == doctest::Approx(0.5f).epsilon(TOLERANCE));
+}
+
+TEST_CASE("Кривая стадии меняет форму, но не время (D-049)") {
+  EnvFixture linear;
+  EnvFixture fast;
+  EnvFixture slow;
+
+  fast.setCurves(1.0f, 0.0f, 0.0f);
+  slow.setCurves(-1.0f, 0.0f, 0.0f);
+
+  const float linearHalf = linear.advance(240);
+  const float fastHalf = fast.advance(240);
+  const float slowHalf = slow.advance(240);
+
+  CHECK(fastHalf > linearHalf);
+  CHECK(slowHalf < linearHalf);
+  CHECK(fastHalf == doctest::Approx(std::pow(0.5f, 0.25f)));
+  CHECK(slowHalf == doctest::Approx(std::pow(0.5f, 4.0f)));
+
+  // Конец стадии в то же время: 10 мс при любой кривой
+  CHECK(fast.advance(240) == doctest::Approx(1.0f));
+  CHECK(slow.advance(240) == doctest::Approx(1.0f));
+}
+
+TEST_CASE("Кривая decay: быстрая проходит путь раньше, время и sustain те же (D-049)") {
+  EnvFixture linear;
+  EnvFixture fast;
+
+  fast.setCurves(0.0f, 1.0f, 0.0f);
+
+  linear.advance(480);
+  fast.advance(480);
+
+  const float linearMiddle = linear.advance(480);
+  const float fastMiddle = fast.advance(480);
+
+  CHECK(fastMiddle < linearMiddle);
+  CHECK(fastMiddle > 0.5f);
+
+  CHECK(linear.advance(480) == doctest::Approx(0.5f));
+  CHECK(fast.advance(480) == doctest::Approx(0.5f));
+}
+
+TEST_CASE("Кривая release: спад с тем же концом и временем (D-049)") {
+  EnvFixture linear;
+  EnvFixture fast;
+
+  fast.setCurves(0.0f, 0.0f, 1.0f);
+
+  linear.advance(4800);
+  fast.advance(4800);
+  linear.release();
+  fast.release();
+
+  const float linearMiddle = linear.advance(960);
+  const float fastMiddle = fast.advance(960);
+
+  CHECK(fastMiddle < linearMiddle);
+  CHECK(fastMiddle > 0.0f);
+
+  CHECK(linear.advance(960) == 0.0f);
+  CHECK(fast.advance(960) == 0.0f);
+  CHECK(fast.env.isFinished());
+}
+
+TEST_CASE("Отпускание на изогнутой стадии не даёт скачка (D-049)") {
+  EnvFixture fixture;
+
+  fixture.setCurves(1.0f, 0.0f, 0.0f);
+
+  const float heard = fixture.advance(120);
+
+  CHECK(heard > 0.5f);
+
+  fixture.release();
+
+  // Первый сэмпл спада продолжается с услышанного уровня, а не с линейного
+  CHECK(fixture.advance(1) == doctest::Approx(heard).epsilon(0.01));
+}
+
+TEST_CASE("Изогнутые стадии стыкуются: на границах нет скачка (D-049)") {
+  EnvFixture fixture;
+
+  fixture.setCurves(0.7f, -0.6f, 0.4f);
+
+  float previous = fixture.advance(1);
+
+  for (uint32_t frame = 1; frame < 2400; frame++) {
+    const float current = fixture.advance(1);
+
+    CHECK(std::fabs(current - previous) < 0.25f);
+    previous = current;
+  }
+}
+
+TEST_CASE("Кривая при sustain 1: decay некуда спадать, деления на ноль нет") {
+  EnvFixture fixture;
+
+  fixture.setParameters(0.01f, 0.02f, 1.0f, 0.04f);
+  fixture.setCurves(0.0f, 1.0f, 0.0f);
+
+  CHECK(fixture.advance(4800) == 1.0f);
+}
+
+TEST_CASE("Attack заканчивается ровно на конце шага при sustain 1: decay с кривой не даёт NaN") {
+  EnvFixture fixture;
+
+  // 1024 кадра: шаг уровня точно представим, поэтому кадров после attack не остаётся
+  fixture.setParameters(1024.0f / SAMPLE_RATE, 0.02f, 1.0f, 0.04f);
+  fixture.setCurves(0.0f, 1.0f, 0.0f);
+
+  CHECK(fixture.advance(1024) == 1.0f);
+}
+
+TEST_CASE("Параметры кривых ENV линейны по умолчанию: старые пресеты звучат как раньше (D-049)") {
+  const auto findParameter = [](const char* key) {
+    for (const ParameterDescriptor& parameter : ENV_DESCRIPTOR.parameters) {
+      if (parameter.key == key) {
+        return parameter.defaultValue;
+      }
+    }
+
+    return -100.0f;
+  };
+
+  CHECK(findParameter("attackCurve") == 0.0f);
+  CHECK(findParameter("decayCurve") == 0.0f);
+  CHECK(findParameter("releaseCurve") == 0.0f);
 }
 
 TEST_CASE("Формы волны LFO (D-050)") {

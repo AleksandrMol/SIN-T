@@ -26,25 +26,6 @@ namespace {
   }
 
   /**
-   * Порядковый номер среди модулей того же типа в том же графе
-   */
-  uint32_t findNumber(const SynthModel& model, const ModuleInstance& module) {
-    uint32_t number = 1;
-
-    for (const auto& [id, other] : model.getModules()) {
-      if (id < module.id && other.owner == module.owner && other.descriptor->type == module.descriptor->type) {
-        number++;
-      }
-    }
-
-    return number;
-  }
-
-  std::string makeLabel(const SynthModel& model, const ModuleInstance& module) {
-    return module.descriptor->name + " " + std::to_string(findNumber(model, module));
-  }
-
-  /**
    * Reaper показывает только имя параметра, поэтому модуль стоит и в имени,
    * иначе два осциллятора выглядели бы в списке одинаково (D-057)
    */
@@ -63,16 +44,16 @@ namespace {
       return info;
     }
 
-    const std::string label = makeLabel(model, module);
+    const std::string label = makeModuleLabel(model, module);
 
     if (module.descriptor->role == MODULE_ROLE::GENERATOR) {
-      info.name = "G" + std::to_string(findNumber(model, module)) + " " + parameter.name;
+      info.name = "G" + std::to_string(findModuleNumber(model, module)) + " " + parameter.name;
       info.path = label;
     } else if (module.owner) {
       const ModuleInstance& generator = *model.findModule(*module.owner);
 
-      info.name = "G" + std::to_string(findNumber(model, generator)) + " " + label + " " + parameter.name;
-      info.path = makeLabel(model, generator) + "/" + label;
+      info.name = "G" + std::to_string(findModuleNumber(model, generator)) + " " + label + " " + parameter.name;
+      info.path = makeModuleLabel(model, generator) + "/" + label;
     } else {
       info.name = label + " " + parameter.name;
       info.path = label;
@@ -80,6 +61,10 @@ namespace {
 
     return info;
   }
+}
+
+std::string makeParameterName(const SynthModel& model, const ModuleInstance& module, const ParameterDescriptor& parameter) {
+  return makeInfo(model, module, parameter).name;
 }
 
 SlotTable::SlotTable() {
@@ -146,6 +131,16 @@ const SlotInfo* SlotTable::find(uint32_t slot) const {
   const auto it = this->infos.find(slot);
 
   return it != this->infos.end() ? &it->second : nullptr;
+}
+
+std::optional<uint32_t> SlotTable::findSlot(ModuleId module, std::string_view parameter) const {
+  for (const auto& [slot, info] : this->infos) {
+    if (info.target.module == module && info.descriptor->key == parameter) {
+      return slot;
+    }
+  }
+
+  return std::nullopt;
 }
 
 std::map<uint32_t, SlotBinding> SlotTable::getPoolBindings() const {

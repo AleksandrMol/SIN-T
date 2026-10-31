@@ -18,7 +18,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 if(NOT WIN32)
-  add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/glibc_compat.h)
+  add_compile_options(-include ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/glibcCompat.h)
 endif()
 
 include(FetchContent)

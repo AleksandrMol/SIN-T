@@ -17,6 +17,16 @@ using ModuleId = uint32_t;
 constexpr ModuleId MACROS_MODULE_ID = 0;
 
 /**
+ * Положение блока на холсте, в точках холста (D-065). На звук не влияет
+ */
+struct ModulePosition {
+  float x;
+  float y;
+
+  bool operator==(const ModulePosition&) const = default;
+};
+
+/**
  * Экземпляр модуля в модели: только данные, без DSP
  */
 struct ModuleInstance {
@@ -25,6 +35,7 @@ struct ModuleInstance {
   std::optional<ModuleId> owner; // Генератор, в подграфе которого лежит модуль. Пусто — главный граф
   std::map<std::string, float> parameters; // Базовые значения в реальных единицах, как в пресете (D-025)
   bool enabled = true; // Отключённый модуль пропускает сумму входов на выходы (D-040)
+  std::optional<ModulePosition> position{}; // Пусто — блок ставит авторасстановка (D-065)
 
   // Заглушка модуля неизвестного типа (D-021). Описание восстановлено из соединений и маршрутов
   // пресета, исходные данные модуля хранятся как есть и записываются обратно при сохранении

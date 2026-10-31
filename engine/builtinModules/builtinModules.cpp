@@ -74,6 +74,7 @@ const ModuleDescriptor GENERATOR_DESCRIPTOR = {
       .defaultValue = 2.0f,
       .unit = "st",
       .isStepped = true,
+      .shortName = "Bend range",
     },
   },
   .isAllowedInPoly = false,

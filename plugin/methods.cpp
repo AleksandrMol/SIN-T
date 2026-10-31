@@ -25,6 +25,12 @@ bool my_plugin_init(const struct clap_plugin *plugin) {
   instance->loadedModel = instance->model;
   instance->hostParams = (const clap_host_params_t*)instance->host->get_extension(instance->host, CLAP_EXT_PARAMS);
   instance->hostPresetLoad = (const clap_host_preset_load_t*)instance->host->get_extension(instance->host, CLAP_EXT_PRESET_LOAD);
+  instance->hostState = (const clap_host_state_t*)instance->host->get_extension(instance->host, CLAP_EXT_STATE);
+  instance->hostTimer = (const clap_host_timer_support_t*)instance->host->get_extension(instance->host, CLAP_EXT_TIMER_SUPPORT);
+
+  if (const auto directory = findPresetDirectory()) {
+    instance->presetLibrary.emplace(*directory);
+  }
 
   instance->slots.sync(*instance->model);
   instance->engine.setSlotTargets(instance->slots.getTargets());
@@ -36,6 +42,9 @@ bool my_plugin_init(const struct clap_plugin *plugin) {
 // Колбэк деинициализации (деструктор) — вызывается, когда плагин удаляют с дорожки
 void my_plugin_destroy(const struct clap_plugin *plugin) {
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  // Хост обязан закрыть редактор сам, но окно не должно пережить плагин
+  my_plugin_destroy_editor(instance);
 
   // Освобождаем память, которую занимает сам объект плагина.
   delete instance;

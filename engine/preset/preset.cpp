@@ -48,9 +48,20 @@ namespace {
     return shortest;
   }
 
+  json positionToJson(const ModulePosition& position) {
+    return { { "x", toJsonNumber(position.x) }, { "y", toJsonNumber(position.y) } };
+  }
+
   json moduleToJson(const ModuleInstance& module) {
     if (module.isStub()) {
-      return json::parse(module.stubData);
+      json stub = json::parse(module.stubData);
+
+      // Положение — единственное, что меняется у заглушки: блок можно передвинуть
+      if (module.position) {
+        stub["position"] = positionToJson(*module.position);
+      }
+
+      return stub;
     }
 
     json result = json::object();
@@ -64,6 +75,10 @@ namespace {
 
     if (!module.enabled) {
       result["enabled"] = false;
+    }
+
+    if (module.position) {
+      result["position"] = positionToJson(*module.position);
     }
 
     if (!module.parameters.empty()) {
@@ -361,6 +376,18 @@ std::expected<SynthModel, std::string> loadModel(const ModuleRegistry* registry,
     }
 
     checkStructure(model);
+
+    // Положение есть и у заглушек, поэтому читается отдельно от настроек (D-065)
+    for (const json& entry : readArray(file, "modules")) {
+      if (entry.contains("position")) {
+        const json& position = entry.at("position");
+
+        throwIfFailed(model.apply(SetModulePosition{
+          readId(entry.at("id")),
+          { position.at("x").get<float>(), position.at("y").get<float>() },
+        }));
+      }
+    }
 
     for (const auto& [id, entry] : settingEntries) {
       if (entry->contains("enabled")) {

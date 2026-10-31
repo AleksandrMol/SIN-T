@@ -2,11 +2,18 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <cmath>
 
 namespace {
   bool isInteger(float value) {
     return std::trunc(value) == value;
+  }
+
+  bool isSameText(std::string_view first, std::string_view second) {
+    return std::ranges::equal(first, second, [](unsigned char left, unsigned char right) {
+      return std::tolower(left) == std::tolower(right);
+    });
   }
 }
 
@@ -35,6 +42,16 @@ std::expected<void, std::string> validateParameter(const ParameterDescriptor& pa
 
   if (parameter.isStepped && !(isInteger(parameter.minValue) && isInteger(parameter.maxValue) && isInteger(parameter.defaultValue))) {
     return std::unexpected(label + "значения ступенчатого параметра должны быть целыми");
+  }
+
+  if (!parameter.choices.empty()) {
+    if (!parameter.isStepped) {
+      return std::unexpected(label + "подписи бывают только у ступенчатого параметра");
+    }
+
+    if (parameter.choices.size() != (size_t)(parameter.maxValue - parameter.minValue) + 1) {
+      return std::unexpected(label + "подписей должно быть столько же, сколько ступеней");
+    }
   }
 
   return {};
@@ -68,6 +85,10 @@ float limitReal(const ParameterDescriptor& parameter, float real) {
 }
 
 std::string formatParameter(const ParameterDescriptor& parameter, float real) {
+  if (!parameter.choices.empty()) {
+    return parameter.choices[(size_t)(limitReal(parameter, real) - parameter.minValue)];
+  }
+
   const float magnitude = std::fabs(real);
   const int decimals = parameter.isStepped || magnitude >= 1000.0f ? 0 : magnitude >= 100.0f ? 1 : magnitude >= 10.0f ? 2 : 3;
 
@@ -84,6 +105,12 @@ std::string formatParameter(const ParameterDescriptor& parameter, float real) {
 
 std::optional<float> parseParameter(const ParameterDescriptor& parameter, std::string_view text) {
   text.remove_prefix(std::min(text.find_first_not_of(" \t"), text.size()));
+
+  for (size_t index = 0; index < parameter.choices.size(); index++) {
+    if (isSameText(parameter.choices[index], text)) {
+      return parameter.minValue + (float)index;
+    }
+  }
 
   if (text.starts_with('+')) {
     text.remove_prefix(1);

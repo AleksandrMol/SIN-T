@@ -1,8 +1,14 @@
-cmake_minimum_required(VERSION 3.24)
-project(sin_t CXX)
+cmake_minimum_required(VERSION 3.28)
+project(sin_t C CXX)
 
 option(SINT_BUILD_TESTS "Собирать unit-тесты (doctest скачивается при настройке)" ON)
+option(SINT_BUILD_GUI "Собирать редактор (RmlUi, pugl и FreeType скачиваются при настройке)" ON)
 set(SINT_SANITIZER "" CACHE STRING "Санитайзер для отдельной сборки: thread или address")
+
+# Санитайзеры проверяют потоки движка, а библиотеки окна в их сборке только мешали бы
+if(SINT_SANITIZER)
+  set(SINT_BUILD_GUI OFF)
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,13 +21,6 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
-endif()
-
-if(MSVC)
-  # Исходники в UTF-8 с русскими комментариями, без /utf-8 MSVC читает их в кодировке системы
-  add_compile_options(/W4 /utf-8)
-else()
-  add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
 if(SINT_SANITIZER)
@@ -39,6 +38,18 @@ FetchContent_Declare(nlohmann_json
 )
 set(JSON_Install OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(nlohmann_json)
+
+if(SINT_BUILD_GUI)
+  include(cmake/gui-dependencies.cmake)
+endif()
+
+# Наши строгие предупреждения: зависимости выше собираются со своими настройками
+if(MSVC)
+  # Исходники в UTF-8 с русскими комментариями, без /utf-8 MSVC читает их в кодировке системы
+  add_compile_options(/W4 /utf-8)
+else()
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 # DSP и модель. DSP без сторонних библиотек (D-002), JSON нужен только пресетам (D-020)
 add_library(sint_engine STATIC
@@ -66,6 +77,7 @@ add_library(sint_engine STATIC
   engine/presetLibrary/presetLibrary.cpp
   engine/sessionState/sessionState.cpp
   engine/slotTable/slotInbox.cpp
+  engine/slotTable/slotOutbox.cpp
   engine/slotTable/slotTable.cpp
   engine/stubProcessor/stubProcessor.cpp
   engine/synthModel/synthModel.cpp
@@ -78,12 +90,14 @@ target_link_libraries(sint_engine PRIVATE nlohmann_json::nlohmann_json)
 # Слой CLAP. Объектная библиотека: те же файлы идут и в .clap, и в офлайн-рендер с тестами
 add_library(sint_plugin_objects OBJECT
   plugin/descriptor.cpp
+  plugin/editing.cpp
   plugin/entry.cpp
   plugin/events.cpp
   plugin/extensions.cpp
   plugin/factory.cpp
   plugin/methods.cpp
   plugin/parameters.cpp
+  plugin/pluginEditorBackend.cpp
   plugin/process.cpp
 )
 target_link_libraries(sint_plugin_objects PUBLIC sint_engine)
@@ -92,9 +106,60 @@ if(NOT MSVC)
   target_compile_options(sint_plugin_objects PRIVATE -Wno-unused-parameter)
 endif()
 
+# Сборки без окна: им не нужны X11 и OpenGL
+add_library(sint_no_editor STATIC plugin/noEditor.cpp)
+target_link_libraries(sint_no_editor PUBLIC sint_engine)
+if(NOT MSVC)
+  target_compile_options(sint_no_editor PRIVATE -Wno-unused-parameter)
+endif()
+
+if(SINT_BUILD_GUI)
+  # Редактор без окна: его можно запустить в тестах на настоящем RmlUi, без дисплея и OpenGL
+  add_library(sint_gui_view STATIC
+    gui/editorDocument/editorDocument.cpp
+    gui/editorView/editorView.cpp
+    gui/graphLayout/graphLayout.cpp
+    gui/knob/knob.cpp
+    gui/meshBuilder/meshBuilder.cpp
+    gui/rmlRuntime/rmlRuntime.cpp
+    gui/wireGeometry/wireGeometry.cpp
+    gui/wireLayer/wireLayer.cpp
+    ${SINT_FONT_SOURCE}
+  )
+  target_link_libraries(sint_gui_view PUBLIC sint_engine RmlUi::Core)
+
+  # Окно: pugl и OpenGL
+  add_library(sint_gui_window STATIC
+    gui/pluginWindow/pluginWindow.cpp
+    ${rmlui_SOURCE_DIR}/Backends/RmlUi_Renderer_GL3.cpp
+  )
+  target_include_directories(sint_gui_window PRIVATE ${rmlui_SOURCE_DIR}/Backends)
+  target_link_libraries(sint_gui_window PUBLIC sint_gui_view pugl_static ${CMAKE_DL_LIBS})
+
+  if(NOT MSVC)
+    # Файл из RmlUi написан не под наши строгие предупреждения
+    set_source_files_properties(${rmlui_SOURCE_DIR}/Backends/RmlUi_Renderer_GL3.cpp PROPERTIES COMPILE_OPTIONS "-w")
+  endif()
+
+  foreach(target sint_gui_view sint_gui_window)
+    sint_apply_glibc_compat(${target})
+  endforeach()
+
+  add_library(sint_editor OBJECT plugin/editor.cpp)
+  target_link_libraries(sint_editor PUBLIC sint_gui_window)
+  if(NOT MSVC)
+    target_compile_options(sint_editor PRIVATE -Wno-unused-parameter)
+  endif()
+  set(SINT_EDITOR_OBJECTS $<TARGET_OBJECTS:sint_editor>)
+  set(SINT_EDITOR_LIBRARIES sint_gui_window)
+else()
+  set(SINT_EDITOR_OBJECTS "")
+  set(SINT_EDITOR_LIBRARIES sint_no_editor)
+endif()
+
 # Готовый плагин. Установка: cmake --install build --prefix ~/.clap
-add_library(sint MODULE $<TARGET_OBJECTS:sint_plugin_objects>)
-target_link_libraries(sint PRIVATE sint_engine)
+add_library(sint MODULE $<TARGET_OBJECTS:sint_plugin_objects> ${SINT_EDITOR_OBJECTS})
+target_link_libraries(sint PRIVATE sint_engine ${SINT_EDITOR_LIBRARIES})
 set_target_properties(sint PROPERTIES PREFIX "" SUFFIX ".clap" OUTPUT_NAME "sint")
 if(NOT WIN32)
   target_link_options(sint PRIVATE -Wl,--exclude-libs,ALL -Wl,--no-undefined)
@@ -106,7 +171,7 @@ add_library(sint_offline STATIC
   tools/offlineHost/offlineHost.cpp
   tools/wav/wav.cpp
 )
-target_link_libraries(sint_offline PUBLIC sint_plugin_objects)
+target_link_libraries(sint_offline PUBLIC sint_plugin_objects sint_no_editor)
 
 add_executable(sint_render tools/render/main.cpp)
 target_link_libraries(sint_render PRIVATE sint_offline)
@@ -130,6 +195,7 @@ if(SINT_BUILD_TESTS)
     tests/clapPlugin.test.cpp
     tests/engine.test.cpp
     tests/filter.test.cpp
+    tests/graphLayout.test.cpp
     tests/liveChanges.test.cpp
     tests/modulation.test.cpp
     tests/modulators.test.cpp
@@ -145,8 +211,24 @@ if(SINT_BUILD_TESTS)
     tests/tools.test.cpp
     tests/voicePool.test.cpp
     tests/wav.test.cpp
+    gui/graphLayout/graphLayout.cpp
+    gui/wireGeometry/wireGeometry.cpp
   )
   target_link_libraries(sint_tests PRIVATE sint_offline doctest::doctest nlohmann_json::nlohmann_json)
   target_compile_definitions(sint_tests PRIVATE SINT_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
   add_test(NAME sint_tests COMMAND sint_tests)
+
+  if(SINT_BUILD_GUI)
+    # Настоящий редактор и настоящий плагин, вместо окна пустая отрисовка
+    add_executable(sint_gui_tests
+      tests/gui/main.cpp
+      tests/gui/editor.test.cpp
+    )
+    target_link_libraries(sint_gui_tests PRIVATE sint_gui_view sint_plugin_objects sint_no_editor doctest::doctest)
+    add_test(NAME sint_gui_tests COMMAND sint_gui_tests)
+
+    # Открывает окно редактора и сохраняет кадр: так внешний вид проверяется без DAW
+    add_executable(sint_editor_preview tools/editorPreview/main.cpp $<TARGET_OBJECTS:sint_editor>)
+    target_link_libraries(sint_editor_preview PRIVATE sint_plugin_objects sint_gui_window X11::X11)
+  endif()
 endif()

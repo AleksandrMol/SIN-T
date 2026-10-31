@@ -25,6 +25,7 @@
 #include "../engine/preset/preset.h"
 #include "../engine/slotTable/slotTable.h"
 #include "../engine/synthModel/synthModel.h"
+#include "../plugin/plugin.h"
 #include "./allocationCounter.h"
 
 using json = nlohmann::json;
@@ -149,12 +150,22 @@ namespace {
   }
 
   /**
+   * Событие, которое плагин отправил хосту
+   */
+  struct SentEvent {
+    uint16_t type;
+    clap_id slot;
+    double value;
+  };
+
+  /**
    * Хост с расширениями параметров и пресетов, записывает всё, что плагин у него просит
    */
   struct ParamsFixture {
     clap_host_t host{};
     clap_host_params_t hostParams{};
     clap_host_preset_load_t hostPresets{};
+    clap_host_state_t hostState{};
     const clap_plugin_t* plugin = nullptr;
     const clap_plugin_params_t* params = nullptr;
     const clap_plugin_state_t* state = nullptr;
@@ -166,6 +177,26 @@ namespace {
     std::vector<std::string> presetErrors;
     std::vector<std::string> loadedPresets;
     std::atomic<int> callbacks = 0;
+    int flushRequests = 0;
+    int dirtyMarks = 0;
+    std::vector<SentEvent> sentEvents;
+
+    const clap_output_events_t outEvents = {
+      .ctx = this,
+      .try_push = [](const clap_output_events_t* list, const clap_event_header_t* event) {
+        auto* fixture = (ParamsFixture*)list->ctx;
+
+        if (event->type == CLAP_EVENT_PARAM_VALUE) {
+          const auto* value = (const clap_event_param_value_t*)event;
+
+          fixture->sentEvents.push_back({ event->type, value->param_id, value->value });
+        } else {
+          fixture->sentEvents.push_back({ event->type, ((const clap_event_param_gesture_t*)event)->param_id, 0.0 });
+        }
+
+        return true;
+      },
+    };
 
     static ParamsFixture* self(const clap_host_t* host) {
       return (ParamsFixture*)host->host_data;
@@ -183,6 +214,10 @@ namespace {
               return &self(host)->hostParams;
             }
 
+            if (!std::strcmp(id, CLAP_EXT_STATE)) {
+              return &self(host)->hostState;
+            }
+
             return !std::strcmp(id, CLAP_EXT_PRESET_LOAD) ? &self(host)->hostPresets : nullptr;
           }
         : [](const clap_host_t*, const char*) -> const void* { return nullptr; };
@@ -192,6 +227,12 @@ namespace {
       };
       this->hostParams.clear = [](const clap_host_t* host, clap_id id, clap_param_clear_flags) {
         self(host)->cleared.push_back(id);
+      };
+      this->hostParams.request_flush = [](const clap_host_t* host) {
+        self(host)->flushRequests++;
+      };
+      this->hostState.mark_dirty = [](const clap_host_t* host) {
+        self(host)->dirtyMarks++;
       };
       this->hostPresets.on_error = [](const clap_host_t* host, uint32_t, const char*, const char*, int32_t, const char* message) {
         self(host)->presetErrors.emplace_back(message);
@@ -237,6 +278,32 @@ namespace {
 
     void mainThread() {
       this->plugin->on_main_thread(this->plugin);
+    }
+
+    MyPluginInstance* instance() const {
+      return (MyPluginInstance*)this->plugin;
+    }
+
+    const SynthModel& model() const {
+      return *this->instance()->model;
+    }
+
+    /**
+     * Модуль типа в главном графе или в подграфе
+     */
+    ModuleId findModule(const std::string& type) const {
+      for (const auto& [id, module] : this->model().getModules()) {
+        if (module.descriptor->type == type) {
+          return id;
+        }
+      }
+
+      FAIL("Нет модуля " << type);
+      return 0;
+    }
+
+    void apply(const Command& command) {
+      REQUIRE(my_plug_apply_command(this->instance(), command).has_value());
     }
 
     clap_param_info_t info(uint32_t index) const {
@@ -331,7 +398,7 @@ namespace {
         },
       };
 
-      this->params->flush(this->plugin, &input, nullptr);
+      this->params->flush(this->plugin, &input, &this->outEvents);
     }
 
     /**
@@ -361,6 +428,7 @@ namespace {
       process.audio_outputs = &output;
       process.audio_outputs_count = 1;
       process.in_events = &input;
+      process.out_events = &this->outEvents;
 
       REQUIRE(this->plugin->process(this->plugin, &process) != CLAP_PROCESS_ERROR);
 
@@ -1342,4 +1410,468 @@ TEST_CASE("Автоматизация во время правок главно�
   CHECK(badSamples == 0);
   CHECK(memoryOperations == 0);
   CHECK(std::isfinite(sum));
+}
+
+TEST_CASE("Ручка редактора меняет модель и звук, хост узнаёт о движении событиями (D-067)") {
+  ParamsFixture fixture;
+  const ModuleId filter = fixture.findModule("filter");
+  const clap_id slot = fixture.findSlot("G1 Filter 1 Cutoff");
+
+  fixture.start();
+  fixture.sentEvents.clear();
+
+  my_plug_begin_gesture(fixture.instance(), filter, "cutoff");
+  fixture.apply(SetParameter{ filter, "cutoff", 200.0f });
+  my_plug_end_gesture(fixture.instance(), filter, "cutoff");
+
+  CHECK(fixture.flushRequests == 3);
+  CHECK(fixture.sentEvents.empty());
+
+  fixture.process(32);
+
+  REQUIRE(fixture.sentEvents.size() == 3);
+  CHECK(fixture.sentEvents[0].type == CLAP_EVENT_PARAM_GESTURE_BEGIN);
+  CHECK(fixture.sentEvents[1].type == CLAP_EVENT_PARAM_VALUE);
+  CHECK(fixture.sentEvents[1].slot == slot);
+  CHECK(fixture.sentEvents[2].type == CLAP_EVENT_PARAM_GESTURE_END);
+  CHECK(fixture.sentEvents[1].value == doctest::Approx(fixture.value(slot)));
+  CHECK(fixture.model().findModule(filter)->parameters.at("cutoff") == 200.0f);
+
+  fixture.sentEvents.clear();
+  fixture.process(32);
+  CHECK(fixture.sentEvents.empty());
+}
+
+TEST_CASE("Без работы звука события уходят через flush (D-067)") {
+  ParamsFixture fixture;
+  const ModuleId filter = fixture.findModule("filter");
+
+  fixture.apply(SetParameter{ filter, "cutoff", 200.0f });
+  fixture.flush({});
+
+  REQUIRE(fixture.sentEvents.size() == 1);
+  CHECK(fixture.sentEvents[0].type == CLAP_EVENT_PARAM_VALUE);
+}
+
+TEST_CASE("Значение из редактора меняет звук сразу, с тем же сглаживанием") {
+  ParamsFixture fixture;
+
+  fixture.load(buildMacroPreset());
+  fixture.start();
+
+  clap_event_note_t note = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+
+  fixture.process(4800, { &note.header });
+
+  const std::vector<float> silent = fixture.process(4800);
+
+  CHECK(peak(silent) == 0.0f);
+
+  fixture.apply(SetParameter{ MACROS_MODULE_ID, "macro1", 1.0f });
+
+  const std::vector<float> rising = fixture.process(SMOOTHING_FRAMES);
+  const std::vector<float> loud = fixture.process(4800);
+
+  CHECK(peak(loud) > 0.05f);
+  CHECK(std::fabs(rising.front()) < 0.05f);
+}
+
+TEST_CASE("Модуль из редактора получает слот, а хост узнаёт новое имя (D-011)") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+  const uint32_t visible = fixture.countVisible();
+
+  fixture.rescans.clear();
+  fixture.start();
+
+  const CommandResult result = my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+
+  REQUIRE(result.has_value());
+  REQUIRE(fixture.rescans.size() == 1);
+  CHECK((fixture.rescans[0] & CLAP_PARAM_RESCAN_INFO) != 0);
+  CHECK((fixture.rescans[0] & CLAP_PARAM_RESCAN_VALUES) != 0);
+  CHECK(fixture.countVisible() == visible + 4);
+
+  // Этого модуля нет в загруженной модели: значение по умолчанию берётся из описания (D-061)
+  const clap_param_info_t rate = fixture.info(fixture.findSlot("G1 LFO 1 Rate"));
+
+  CHECK(rate.default_value == doctest::Approx(fixture.value(rate.id)));
+
+  const clap_id rateSlot = rate.id;
+
+  fixture.apply(RemoveModule{ **result });
+
+  CHECK(fixture.countVisible() == visible);
+  CHECK(std::ranges::contains(fixture.cleared, rateSlot));
+  CHECK(fixture.rescans.size() == 2);
+}
+
+TEST_CASE("Удаление соседа сдвигает номера: хост получает новые имена (D-057)") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+  const ModuleId first = **my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+  const ModuleId second = **my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+  const clap_id slot = fixture.findSlot("G1 LFO 2 Rate");
+
+  fixture.apply(RemoveModule{ first });
+
+  CHECK(fixture.findSlot("G1 LFO 1 Rate") == slot);
+  CHECK(fixture.instance()->slots.find(slot)->target.module == second);
+}
+
+TEST_CASE("Правка соединения не трогает список параметров, но меняет звук") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+  const Connection wire = { generator, "out", fixture.model().getOutputId(), "in" };
+
+  fixture.start();
+
+  clap_event_note_t note = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+
+  fixture.process(4800, { &note.header });
+  CHECK(peak(fixture.process(4800)) > 0.01f);
+
+  fixture.rescans.clear();
+  fixture.apply(Disconnect{ wire });
+
+  // Переход занимает ~10 мс, затем главный поток заканчивает его
+  fixture.process(4800);
+  fixture.mainThread();
+  fixture.process(4800);
+  fixture.mainThread();
+
+  CHECK(peak(fixture.process(4800)) == 0.0f);
+  CHECK(fixture.rescans.empty());
+}
+
+TEST_CASE("Положение блока попадает в состояние, но не в звук и не в список параметров (D-065)") {
+  ParamsFixture fixture;
+  const ModuleId output = fixture.model().getOutputId();
+  const uint64_t revision = fixture.instance()->modelRevision;
+
+  fixture.rescans.clear();
+  fixture.apply(SetModulePosition{ output, { 500.0f, 60.0f } });
+
+  CHECK(fixture.rescans.empty());
+  CHECK(fixture.flushRequests == 0);
+  CHECK(fixture.dirtyMarks == 1);
+  CHECK(fixture.instance()->modelRevision == revision + 1);
+
+  const std::string saved = fixture.save();
+  ParamsFixture other;
+
+  REQUIRE(other.load(saved));
+  CHECK(other.model().findModule(output)->position == ModulePosition{ 500.0f, 60.0f });
+}
+
+TEST_CASE("Отклонённая правка не считается изменением") {
+  ParamsFixture fixture;
+  const uint64_t revision = fixture.instance()->modelRevision;
+  const std::string before = fixture.save();
+
+  CHECK_FALSE(my_plug_apply_command(fixture.instance(), RemoveModule{ fixture.model().getOutputId() }).has_value());
+
+  CHECK(fixture.instance()->modelRevision == revision);
+  CHECK(fixture.dirtyMarks == 0);
+  CHECK(fixture.rescans.empty());
+  CHECK(fixture.save() == before);
+}
+
+TEST_CASE("Значения хоста доходят до модели раньше правки: новый план не откатывает их (D-056)") {
+  ParamsFixture fixture;
+  const clap_id cutoff = fixture.findSlot("G1 Filter 1 Cutoff");
+  const clap_event_param_value_t value = makeValue(cutoff, 0.25);
+
+  fixture.start();
+  fixture.process(32, { &value.header });
+  fixture.apply(SetModuleEnabled{ fixture.findModule("amp"), false });
+
+  CHECK(fixture.value(cutoff) == doctest::Approx(0.25));
+}
+
+TEST_CASE("Значение хоста не достаётся новому параметру, занявшему освободившийся слот (D-056)") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+  const ModuleId lfo = **my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+  const clap_id slot = fixture.findSlot("G1 LFO 1 Rate");
+  const clap_event_param_value_t value = makeValue(slot, 0.9);
+
+  fixture.start();
+  fixture.process(32, { &value.header });
+
+  // Значение ещё в пути к модели, а правка уже убирает его параметр и отдаёт слот новому
+  fixture.apply(RemoveModule{ lfo });
+
+  const ModuleId other = **my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+
+  REQUIRE(fixture.instance()->slots.findSlot(other, "rate") == slot);
+
+  fixture.mainThread();
+
+  CHECK(fixture.model().findModule(other)->parameters.at("rate") == 2.0f);
+}
+
+TEST_CASE("Ревизия растёт при изменении значения хостом и замене состояния: редактор перечитывает модель") {
+  ParamsFixture fixture;
+  const clap_id cutoff = fixture.findSlot("G1 Filter 1 Cutoff");
+  const clap_event_param_value_t value = makeValue(cutoff, 0.25);
+
+  fixture.start();
+
+  uint64_t revision = fixture.instance()->modelRevision;
+
+  fixture.process(32, { &value.header });
+  fixture.mainThread();
+  CHECK(fixture.instance()->modelRevision > revision);
+
+  revision = fixture.instance()->modelRevision;
+  REQUIRE(fixture.load(buildTwoOscillatorPreset()));
+  CHECK(fixture.instance()->modelRevision > revision);
+}
+
+TEST_CASE("Сохранение пресета из редактора: новый файл не перезаписывает старый (ТЗ §9.2, §9.3)") {
+  const std::filesystem::path directory = std::filesystem::temp_directory_path() / "sint-editing-test";
+
+  std::filesystem::remove_all(directory);
+
+  ParamsFixture fixture;
+  const ModuleId filter = fixture.findModule("filter");
+
+  fixture.instance()->presetLibrary.emplace(directory);
+
+  fixture.apply(SetParameter{ filter, "cutoff", 300.0f });
+  REQUIRE(my_plug_save_preset(fixture.instance(), "Bass", PRESET_WRITE::CREATE).has_value());
+  CHECK(fixture.instance()->presetName == "Bass");
+  CHECK(fixture.dirtyMarks == 2);
+
+  fixture.apply(SetParameter{ filter, "cutoff", 400.0f });
+  CHECK_FALSE(my_plug_save_preset(fixture.instance(), "Bass", PRESET_WRITE::CREATE).has_value());
+
+  const auto kept = fixture.instance()->presetLibrary->read("Bass");
+
+  REQUIRE(kept.has_value());
+  CHECK(loadModel(&fixture.instance()->registry, *kept)->findModule(filter)->parameters.at("cutoff") == 300.0f);
+
+  REQUIRE(my_plug_save_preset(fixture.instance(), "Bass", PRESET_WRITE::OVERWRITE).has_value());
+
+  const auto updated = fixture.instance()->presetLibrary->read("Bass");
+
+  CHECK(loadModel(&fixture.instance()->registry, *updated)->findModule(filter)->parameters.at("cutoff") == 400.0f);
+
+  REQUIRE(my_plug_load_preset(fixture.instance(), *kept, "Bass").has_value());
+  CHECK(fixture.model().findModule(filter)->parameters.at("cutoff") == 300.0f);
+
+  std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("Запись в недоступную папку сообщает причину и не меняет имя пресета") {
+  ParamsFixture fixture;
+
+  fixture.instance()->presetLibrary.reset();
+
+  CHECK_FALSE(my_plug_save_preset(fixture.instance(), "Bass", PRESET_WRITE::CREATE).has_value());
+  CHECK(fixture.instance()->presetName.empty());
+}
+
+TEST_CASE("Аудиопоток не выделяет память, отдавая хосту события редактора (D-023)") {
+  ParamsFixture fixture;
+  const ModuleId filter = fixture.findModule("filter");
+
+  fixture.start();
+
+  // Хост, который ничего не хранит: выделение памяти в нём не должно считаться
+  const clap_output_events_t output = {
+    .ctx = nullptr,
+    .try_push = [](const clap_output_events_t*, const clap_event_header_t*) { return true; },
+  };
+
+  std::vector<float> left(128);
+  std::vector<float> right(128);
+  float* channels[2] = { left.data(), right.data() };
+
+  clap_audio_buffer_t audio{};
+  audio.data32 = channels;
+  audio.channel_count = 2;
+
+  const clap_input_events_t input = {
+    .ctx = nullptr,
+    .size = [](const clap_input_events_t*) { return (uint32_t)0; },
+    .get = [](const clap_input_events_t*, uint32_t) { return (const clap_event_header_t*)nullptr; },
+  };
+
+  clap_process_t process{};
+  process.frames_count = 128;
+  process.audio_outputs = &audio;
+  process.audio_outputs_count = 1;
+  process.in_events = &input;
+  process.out_events = &output;
+
+  fixture.plugin->process(fixture.plugin, &process);
+
+  my_plug_begin_gesture(fixture.instance(), filter, "cutoff");
+  fixture.apply(SetParameter{ filter, "cutoff", 300.0f });
+  my_plug_end_gesture(fixture.instance(), filter, "cutoff");
+
+  const size_t before = getThreadMemoryOperations();
+
+  fixture.plugin->process(fixture.plugin, &process);
+
+  CHECK(getThreadMemoryOperations() == before);
+}
+
+TEST_CASE("Правки редактора во время звука (стресс-тест, запускать и под ThreadSanitizer)") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+  const ModuleId filter = fixture.findModule("filter");
+  const ModuleId amp = fixture.findModule("amp");
+  const clap_id cutoff = fixture.findSlot("G1 Filter 1 Cutoff");
+
+  fixture.start();
+
+  std::atomic<bool> isRunning = true;
+  uint64_t blocks = 0;
+  uint64_t badSamples = 0;
+  uint64_t sentValues = 0;
+  size_t memoryOperations = 0;
+
+  std::thread audioThread([&] {
+    std::mt19937 random(11);
+    std::vector<float> left(128);
+    std::vector<float> right(128);
+    float* channels[2] = { left.data(), right.data() };
+    std::array<clap_event_param_value_t, 2> values;
+    std::array<const clap_event_header_t*, 3> events;
+    clap_event_note_t note = makeNote(CLAP_EVENT_NOTE_ON, 60);
+
+    const clap_input_events_t input = {
+      .ctx = &events,
+      .size = [](const clap_input_events_t* list) {
+        return (uint32_t)((std::array<const clap_event_header_t*, 3>*)list->ctx)->size();
+      },
+      .get = [](const clap_input_events_t* list, uint32_t index) {
+        return (*(std::array<const clap_event_header_t*, 3>*)list->ctx)[index];
+      },
+    };
+
+    const clap_output_events_t output = {
+      .ctx = &sentValues,
+      .try_push = [](const clap_output_events_t* list, const clap_event_header_t* event) {
+        *(uint64_t*)list->ctx += event->type == CLAP_EVENT_PARAM_VALUE ? 1 : 0;
+
+        return true;
+      },
+    };
+
+    clap_audio_buffer_t audio{};
+    audio.data32 = channels;
+    audio.channel_count = 2;
+
+    clap_process_t process{};
+    process.frames_count = 128;
+    process.audio_outputs = &audio;
+    process.audio_outputs_count = 1;
+    process.in_events = &input;
+    process.out_events = &output;
+
+    const size_t before = getThreadMemoryOperations();
+
+    while (isRunning) {
+      const double position = (double)(random() % 1000) / 1000.0;
+
+      values[0] = makeValue(cutoff, position);
+      values[1] = makeValue(random() % SLOT_COUNT, position);
+
+      for (size_t index = 0; index < values.size(); index++) {
+        events[index] = &values[index].header;
+      }
+
+      note.header.type = random() % 3 == 0 ? CLAP_EVENT_NOTE_ON : CLAP_EVENT_NOTE_OFF;
+      note.key = (int16_t)(48 + random() % 24);
+      events[2] = &note.header;
+
+      fixture.plugin->process(fixture.plugin, &process);
+
+      blocks++;
+      badSamples += (uint64_t)std::ranges::count_if(left, [](float sample) {
+        return !std::isfinite(sample);
+      });
+    }
+
+    memoryOperations = getThreadMemoryOperations() - before;
+  });
+
+  std::mt19937 random(17);
+  std::vector<ModuleId> added;
+  const ModuleId voiceOutput = findVoiceOutput(fixture.model(), generator);
+  auto* instance = fixture.instance();
+
+  for (int step = 0; step < 4000; step++) {
+    fixture.mainThread();
+
+    switch (random() % 6) {
+      case 0: {
+        const CommandResult result = my_plug_apply_command(instance, AddModule{ random() % 2 ? "lfo" : "oscillator", generator });
+
+        REQUIRE(result.has_value());
+        added.push_back(**result);
+        break;
+      }
+
+      case 1:
+        if (!added.empty()) {
+          const size_t index = random() % added.size();
+
+          REQUIRE(my_plug_apply_command(instance, RemoveModule{ added[index] }).has_value());
+          added.erase(added.begin() + (std::ptrdiff_t)index);
+        }
+        break;
+
+      case 2:
+        (void)my_plug_apply_command(instance, Disconnect{ { amp, "out", voiceOutput, "in" } });
+        (void)my_plug_apply_command(instance, Connect{ { amp, "out", voiceOutput, "in" } });
+        break;
+
+      case 3:
+        (void)my_plug_apply_command(instance, SetModuleEnabled{ filter, random() % 2 == 0 });
+        break;
+
+      default:
+        my_plug_begin_gesture(instance, filter, "cutoff");
+        (void)my_plug_apply_command(instance, SetParameter{ filter, "cutoff", 100.0f + (float)(random() % 5000) });
+        my_plug_end_gesture(instance, filter, "cutoff");
+        break;
+    }
+
+    if (step % 16 == 0) {
+      std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  isRunning = false;
+  audioThread.join();
+
+  CHECK(blocks > 0);
+  CHECK(sentValues > 0);
+  CHECK(badSamples == 0);
+  CHECK(memoryOperations == 0);
+}
+
+TEST_CASE("Неактивный плагин: под ID генератора в новом проекте другой модуль (прошлый план на него ссылается)") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+
+  // ID генератора занимает обычный модуль: так бывает у любого проекта, собранного не из пресета по умолчанию
+  ModuleRegistry registry;
+  REQUIRE(addAllModules(registry).has_value());
+
+  SynthModel model(&registry);
+  const ModuleId other = **model.apply(AddModule{ "filter" });
+
+  REQUIRE(other == generator);
+  REQUIRE(fixture.load(saveModel(model)));
+
+  CHECK(fixture.model().findModule(generator)->descriptor->type == "filter");
+  fixture.start();
+  fixture.process(256);
 }

@@ -61,6 +61,13 @@ class SynthModel {
      */
     const ModuleInstance* findModule(ModuleId id) const;
 
+    /**
+     * Проверяет соединение и маршрут, ничего не меняя: редактор подсвечивает допустимые цели,
+     * пока тянется провод. Команды проверяются этими же правилами
+     */
+    std::expected<void, std::string> checkConnection(const Connection& connection) const;
+    std::expected<void, std::string> checkRoute(const ModSource& source, const ModTarget& target) const;
+
     bool operator==(const SynthModel&) const = default;
 
   private:
@@ -81,7 +88,6 @@ class SynthModel {
     ModuleId createModule(const ModuleDescriptor* descriptor, std::optional<ModuleId> owner);
     void insertModule(ModuleId id, const ModuleDescriptor* descriptor, std::optional<ModuleId> owner);
     bool hasAudioPath(ModuleId from, ModuleId to) const;
-    std::expected<void, std::string> validateRoute(const ModSource& source, const ModTarget& target) const;
     std::vector<ModRoute>::iterator findRoute(const ModSource& source, const ModTarget& target);
 
     CommandResult execute(const AddModule& command);
@@ -90,10 +96,21 @@ class SynthModel {
     CommandResult execute(const Disconnect& command);
     CommandResult execute(const SetParameter& command);
     CommandResult execute(const SetModuleEnabled& command);
+    CommandResult execute(const SetModulePosition& command);
     CommandResult execute(const AddRoute& command);
     CommandResult execute(const RemoveRoute& command);
     CommandResult execute(const SetRouteDepth& command);
 };
+
+/**
+ * Порядковый номер модуля среди модулей того же типа в том же графе
+ */
+uint32_t findModuleNumber(const SynthModel& model, const ModuleInstance& module);
+
+/**
+ * Имя модуля для человека: «Filter 1». Номер сдвигается после удаления соседа (D-057)
+ */
+std::string makeModuleLabel(const SynthModel& model, const ModuleInstance& module);
 
 /**
  * Переход между двумя моделями. Удалённое ещё затухает, поэтому движок какое-то время исполняет обе сразу

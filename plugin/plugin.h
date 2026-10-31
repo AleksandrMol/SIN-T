@@ -6,11 +6,15 @@
 #include "../clap/clap.h"
 #include "../engine/engine/engine.h"
 #include "../engine/moduleRegistry/moduleRegistry.h"
+#include "../engine/presetLibrary/presetLibrary.h"
 #include "../engine/sessionState/sessionState.h"
 #include "../engine/slotTable/slotInbox.h"
+#include "../engine/slotTable/slotOutbox.h"
 #include "../engine/slotTable/slotTable.h"
 #include "../engine/synthModel/synthModel.h"
 
+#include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 
@@ -32,6 +36,8 @@ struct MyPluginInstance {
   const clap_host_t* host; // Указатель на DAW
   const clap_host_params_t* hostParams; // Расширения хоста, могут отсутствовать
   const clap_host_preset_load_t* hostPresetLoad;
+  const clap_host_state_t* hostState;
+  const clap_host_timer_support_t* hostTimer;
 
   uint32_t latency;
 
@@ -43,8 +49,13 @@ struct MyPluginInstance {
   std::optional<SynthModel> loadedModel; // Модель в момент загрузки: её значения хост видит как значения по умолчанию (D-061)
   SlotTable slots;
   SlotInbox slotInbox;
+  SlotOutbox slotOutbox;
+  std::optional<PresetLibrary> presetLibrary; // Пусто, если система не сообщает домашнюю папку
   std::string presetName; // Имя загруженного пресета, в состоянии проекта (D-020)
+  uint64_t modelRevision; // Растёт с каждым изменением модели: так редактор узнаёт, что пора перечитать её
   Engine engine;
+
+  struct PluginEditor* editor; // Окно редактора. Пусто, пока хост его не создал
 };
 
 // Методы CLAP
@@ -84,3 +95,16 @@ void my_plug_set_slot(MyPluginInstance *instance, const clap_event_param_value_t
 void my_plug_request_slot_sync(MyPluginInstance *instance);
 void my_plug_sync_slot_values(MyPluginInstance *instance);
 void my_plug_replace_state(MyPluginInstance *instance, SessionState state);
+
+// ПРАВКИ ИЗ РЕДАКТОРА
+CommandResult my_plug_apply_command(MyPluginInstance *instance, const Command& command);
+void my_plug_begin_gesture(MyPluginInstance *instance, ModuleId module, const std::string& parameter);
+void my_plug_end_gesture(MyPluginInstance *instance, ModuleId module, const std::string& parameter);
+void my_plug_request_host_events(MyPluginInstance *instance);
+void my_plug_send_host_events(MyPluginInstance *instance, const clap_output_events_t *out);
+std::expected<void, std::string> my_plug_load_preset(MyPluginInstance *instance, const std::string& text, std::string name);
+std::expected<void, std::string> my_plug_save_preset(MyPluginInstance *instance, const std::string& name, PRESET_WRITE mode);
+
+// РЕДАКТОР. Без него плагин работает: офлайн-рендер и тесты собираются с заглушкой plugin/noEditor.cpp
+const void* my_plugin_get_editor_extension(const char *id);
+void my_plugin_destroy_editor(MyPluginInstance *instance);

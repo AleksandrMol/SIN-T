@@ -33,6 +33,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = (float)WAVE_TYPE::SAW,
       .isStepped = true,
       .isModulatable = true,
+      .choices = { "Sine", "Square", "Saw", "Triangle" },
     },
     {
       .key = "coarse",

@@ -199,8 +199,7 @@ CommandResult SynthModel::execute(const RemoveModule& command) {
   return std::nullopt;
 }
 
-CommandResult SynthModel::execute(const Connect& command) {
-  const Connection& connection = command.connection;
+std::expected<void, std::string> SynthModel::checkConnection(const Connection& connection) const {
   const ModuleInstance* from = this->findModule(connection.fromModule);
   const ModuleInstance* to = this->findModule(connection.toModule);
 
@@ -232,7 +231,15 @@ CommandResult SynthModel::execute(const Connect& command) {
     return std::unexpected("соединение создаёт цикл");
   }
 
-  this->connections.push_back(connection);
+  return {};
+}
+
+CommandResult SynthModel::execute(const Connect& command) {
+  if (const auto result = this->checkConnection(command.connection); !result) {
+    return std::unexpected(result.error());
+  }
+
+  this->connections.push_back(command.connection);
 
   return std::nullopt;
 }
@@ -300,10 +307,31 @@ CommandResult SynthModel::execute(const SetModuleEnabled& command) {
   return std::nullopt;
 }
 
+CommandResult SynthModel::execute(const SetModulePosition& command) {
+  const auto module = this->modules.find(command.module);
+
+  if (module == this->modules.end()) {
+    return std::unexpected(moduleLabel(command.module) + " не существует");
+  }
+
+  // Макросы живут в своей панели, а не на холсте
+  if (module->second.descriptor->role == MODULE_ROLE::MACROS) {
+    return std::unexpected("у макросов нет положения на холсте");
+  }
+
+  if (!std::isfinite(command.position.x) || !std::isfinite(command.position.y)) {
+    return std::unexpected("положение модуля не является числом");
+  }
+
+  module->second.position = command.position;
+
+  return std::nullopt;
+}
+
 /**
- * Проверяет концы маршрута и правила модуляции между зонами (D-004)
+ * Проверяет концы маршрута, правила модуляции между зонами (D-004) и то, что такого маршрута ещё нет
  */
-std::expected<void, std::string> SynthModel::validateRoute(const ModSource& source, const ModTarget& target) const {
+std::expected<void, std::string> SynthModel::checkRoute(const ModSource& source, const ModTarget& target) const {
   const ModuleInstance* sourceModule = this->findModule(source.module);
   const ModuleInstance* targetModule = this->findModule(target.module);
 
@@ -336,6 +364,14 @@ std::expected<void, std::string> SynthModel::validateRoute(const ModSource& sour
     return std::unexpected("голосовой модулятор не может управлять параметром другого генератора");
   }
 
+  const bool exists = std::ranges::any_of(this->routes, [&](const ModRoute& route) {
+    return route.source == source && route.target == target;
+  });
+
+  if (exists) {
+    return std::unexpected("такой маршрут уже есть");
+  }
+
   return {};
 }
 
@@ -348,16 +384,12 @@ std::vector<ModRoute>::iterator SynthModel::findRoute(const ModSource& source, c
 CommandResult SynthModel::execute(const AddRoute& command) {
   const ModRoute& route = command.route;
 
-  if (const auto result = this->validateRoute(route.source, route.target); !result) {
+  if (const auto result = this->checkRoute(route.source, route.target); !result) {
     return std::unexpected(result.error());
   }
 
   if (!std::isfinite(route.depth)) {
     return std::unexpected("глубина маршрута не является числом");
-  }
-
-  if (this->findRoute(route.source, route.target) != this->routes.end()) {
-    return std::unexpected("такой маршрут уже есть");
   }
 
   this->routes.push_back(route);
@@ -392,6 +424,22 @@ CommandResult SynthModel::execute(const SetRouteDepth& command) {
   it->depth = std::clamp(command.depth, -1.0f, 1.0f);
 
   return std::nullopt;
+}
+
+uint32_t findModuleNumber(const SynthModel& model, const ModuleInstance& module) {
+  uint32_t number = 1;
+
+  for (const auto& [id, other] : model.getModules()) {
+    if (id < module.id && other.owner == module.owner && other.descriptor->type == module.descriptor->type) {
+      number++;
+    }
+  }
+
+  return number;
+}
+
+std::string makeModuleLabel(const SynthModel& model, const ModuleInstance& module) {
+  return module.descriptor->name + " " + std::to_string(findModuleNumber(model, module));
 }
 
 ModelTransition mergeModels(const SynthModel& previous, const SynthModel& next) {

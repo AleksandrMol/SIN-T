@@ -39,6 +39,11 @@ struct SetModuleEnabled {
   bool enabled;
 };
 
+struct SetModulePosition {
+  ModuleId module;
+  ModulePosition position;
+};
+
 struct AddRoute {
   ModRoute route;
 };
@@ -61,6 +66,7 @@ using Command = std::variant<
   Disconnect,
   SetParameter,
   SetModuleEnabled,
+  SetModulePosition,
   AddRoute,
   RemoveRoute,
   SetRouteDepth

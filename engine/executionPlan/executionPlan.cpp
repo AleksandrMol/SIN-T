@@ -195,7 +195,12 @@ namespace {
     }
   }
 
-  void createProcessor(const ModuleInstance& module, ModuleSlot& slot) {
+  void createProcessor(const ModuleInstance& module, ModuleSlot& slot, PlanExchange* exchange) {
+    // Под этим ID жил модуль другого типа. Прошлый план ещё ссылается на него, поэтому удалять его рано
+    if (exchange && slot.processor) {
+      exchange->bury(std::move(slot.processor));
+    }
+
     slot.descriptor = module.descriptor;
     slot.generator = nullptr;
 
@@ -288,7 +293,7 @@ namespace {
       const bool isNew = slot.descriptor != module.descriptor;
 
       if (isNew) {
-        createProcessor(module, slot);
+        createProcessor(module, slot, sync.exchange);
         slot.processor->prepare(sync.sampleRate);
 
         // Огибающая, появившаяся посреди ноты, начинает атаку, а не молчит до следующей ноты

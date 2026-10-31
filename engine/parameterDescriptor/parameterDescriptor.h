@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 enum class PARAM_CURVE {
   LINEAR,
@@ -24,6 +25,8 @@ struct ParameterDescriptor {
   bool isStepped = false;
   bool isModulatable = false;
   bool isStructural = false; // Значение приходит с планом: ему может понадобиться память (D-053)
+  std::vector<std::string> choices{}; // Подписи ступеней, начиная с minValue. Только у ступенчатых (D-066)
+  std::string shortName{}; // Подпись под ручкой, если имя в неё не помещается
 };
 
 /**
@@ -49,13 +52,14 @@ float toNormalized(const ParameterDescriptor& parameter, float real);
 float limitReal(const ParameterDescriptor& parameter, float real);
 
 /**
- * Значение в реальных единицах как текст для человека: «1200 Hz», «0.300 s».
+ * Значение в реальных единицах как текст для человека: «1200 Hz», «0.300 s», «Saw».
  * Не зависит от локали: хост мог поменять её во всём процессе
  */
 std::string formatParameter(const ParameterDescriptor& parameter, float real);
 
 /**
- * Обратно к formatParameter. Единицы после числа не обязательны. Значение вне диапазона
- * ограничивается. Пусто, если текст не начинается с числа
+ * Обратно к formatParameter. Подпись ступени читается без учёта регистра, число тоже подходит.
+ * Единицы после числа не обязательны. Значение вне диапазона ограничивается.
+ * Пусто, если это не подпись и текст не начинается с числа
  */
 std::optional<float> parseParameter(const ParameterDescriptor& parameter, std::string_view text);

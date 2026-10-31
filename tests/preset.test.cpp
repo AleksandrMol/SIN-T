@@ -240,6 +240,46 @@ TEST_CASE_FIXTURE(PresetFixture, "Поле enabled при загрузке (D-04
   CHECK(loaded->findModule(this->mainFilter)->enabled);
 }
 
+TEST_CASE_FIXTURE(PresetFixture, "Положение блока сохраняется и не обязательно (D-065)") {
+  REQUIRE(this->model->apply(SetModulePosition{ this->model->getOutputId(), { 640.0f, 40.5f } }).has_value());
+
+  const std::string text = saveModel(*this->model);
+  const json file = json::parse(text);
+  const auto loaded = loadModel(&this->registry, text);
+
+  REQUIRE(loaded.has_value());
+  CHECK(loaded->findModule(this->model->getOutputId())->position == ModulePosition{ 640.0f, 40.5f });
+  CHECK(*loaded == *this->model);
+
+  // Модуль, который не двигали, поля не пишет: файл остаётся таким же, как у старых версий
+  size_t positions = 0;
+
+  for (const json& module : file.at("modules")) {
+    positions += module.contains("position") ? 1 : 0;
+  }
+
+  CHECK(positions == 1);
+  CHECK(file.at("version") == 1);
+}
+
+TEST_CASE_FIXTURE(PresetFixture, "Файл с неверным положением отклоняется (D-065)") {
+  json file = json::parse(saveModel(*this->model));
+
+  SUBCASE("не объект") {
+    file.at("modules")[0]["position"] = 5;
+  }
+
+  SUBCASE("нет координаты") {
+    file.at("modules")[0]["position"] = { { "x", 5 } };
+  }
+
+  SUBCASE("координата не число") {
+    file.at("modules")[0]["position"] = { { "x", 5 }, { "y", "верх" } };
+  }
+
+  CHECK_FALSE(loadModel(&this->registry, file.dump()).has_value());
+}
+
 TEST_CASE_FIXTURE(PresetFixture, "Файл с неверным полем enabled отклоняется (D-040)") {
   const ModuleId mainFilter = this->mainFilter;
   const ModuleId outputId = this->model->getOutputId();
@@ -410,6 +450,26 @@ TEST_CASE_FIXTURE(PresetFixture, "Файл с нарушенной структ�
         { "depth", 0.5 },
       });
     });
+  }
+}
+
+TEST_CASE_FIXTURE(StubFixture, "Заглушку можно передвинуть, остальные её данные не меняются (D-065)") {
+  auto loaded = loadModel(&this->registry, this->buildFile().dump());
+
+  REQUIRE(loaded.has_value());
+  REQUIRE(loaded->apply(SetModulePosition{ this->stubId, { 300.0f, 200.0f } }).has_value());
+
+  const std::string saved = saveModel(*loaded);
+  const auto reloaded = loadModel(&this->registry, saved);
+
+  REQUIRE(reloaded.has_value());
+  CHECK(reloaded->findModule(this->stubId)->position == ModulePosition{ 300.0f, 200.0f });
+
+  for (const json& module : json::parse(saved).at("modules")) {
+    if (module.at("id") == this->stubId) {
+      CHECK(module.at("type") == "future.chorus");
+      CHECK(module.at("parameters").at("rate") == 0.5);
+    }
   }
 }
 

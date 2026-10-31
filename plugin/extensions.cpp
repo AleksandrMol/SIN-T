@@ -1,6 +1,5 @@
 #include <cstdio>
 #include "./plugin.h"
-#include "../engine/preset/preset.h"
 #include "../engine/presetLibrary/presetLibrary.h"
 #include "../engine/sessionState/sessionState.h"
 #include <cstring>
@@ -193,20 +192,10 @@ bool my_plug_preset_load_from_location(
     return false;
   }
 
-  auto loaded = loadModel(&instance->registry, *text);
-
-  if (!loaded) {
-    reportPresetError(instance, location_kind, location, load_key, loaded.error());
+  if (const auto result = my_plug_load_preset(instance, *text, path.stem().string()); !result) {
+    reportPresetError(instance, location_kind, location, load_key, result.error());
     return false;
   }
-
-  my_plug_sync_slot_values(instance);
-
-  // Таблица остаётся: слот сохранит тот модуль, который есть и в новом пресете под тем же ID и типом
-  SessionState state = { .model = std::move(*loaded), .slots = instance->slots, .presetName = path.stem().string() };
-
-  state.slots.sync(state.model);
-  my_plug_replace_state(instance, std::move(state));
 
   if (instance->hostPresetLoad) {
     instance->hostPresetLoad->loaded(instance->host, location_kind, location, load_key);
@@ -238,5 +227,5 @@ const void* my_plugin_get_extension(const struct clap_plugin *plugin, const char
   // if (!strcmp(id, CLAP_EXT_LATENCY))
   //   return &s_my_plug_latency;
 
-  return NULL;
+  return my_plugin_get_editor_extension(id);
 }

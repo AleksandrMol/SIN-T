@@ -135,6 +135,48 @@ TEST_CASE("Текст значения обратно в число") {
   CHECK_FALSE(parseParameter(CUTOFF, "nan").has_value());
 }
 
+TEST_CASE("Подписи ступеней (D-066)") {
+  ParameterDescriptor shape = {
+    .key = "shape",
+    .name = "Shape",
+    .minValue = 1.0f,
+    .maxValue = 3.0f,
+    .defaultValue = 1.0f,
+    .isStepped = true,
+    .choices = { "Saw", "Square", "1/4T" },
+  };
+
+  REQUIRE(validateParameter(shape).has_value());
+
+  CHECK(formatParameter(shape, 1.0f) == "Saw");
+  CHECK(formatParameter(shape, 3.0f) == "1/4T");
+  CHECK(formatParameter(shape, 99.0f) == "1/4T");
+
+  CHECK(parseParameter(shape, "square") == 2.0f);
+  CHECK(parseParameter(shape, " 1/4t") == 3.0f);
+  CHECK(parseParameter(shape, "2") == 2.0f);
+  CHECK_FALSE(parseParameter(shape, "Triangle").has_value());
+
+  for (float value = 1.0f; value <= 3.0f; value += 1.0f) {
+    CHECK(parseParameter(shape, formatParameter(shape, value)) == value);
+  }
+
+  SUBCASE("подписей меньше, чем ступеней") {
+    shape.choices.pop_back();
+    CHECK_FALSE(validateParameter(shape).has_value());
+  }
+
+  SUBCASE("подписей больше, чем ступеней") {
+    shape.choices.push_back("Extra");
+    CHECK_FALSE(validateParameter(shape).has_value());
+  }
+
+  SUBCASE("подписи у плавного параметра") {
+    shape.isStepped = false;
+    CHECK_FALSE(validateParameter(shape).has_value());
+  }
+}
+
 TEST_CASE("Текст значения устойчив к переводу туда и обратно") {
   for (const ParameterDescriptor* parameter : { &GAIN, &CUTOFF, &WAVE }) {
     for (float position = 0.0f; position <= 1.0f; position += 0.01f) {

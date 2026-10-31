@@ -61,6 +61,7 @@ clap_process_status my_plugin_process(
   }
 
   instance->engine.process(left + done, right + done, totalFrames - done);
+  my_plug_send_host_events(instance, process->out_events);
 
   // Освобождать память и продолжать переход должен главный поток, значения слотов ждёт модель.
   // Два вопроса вычисляются оба: каждый снимает свой флаг
