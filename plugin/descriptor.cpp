@@ -3,7 +3,7 @@
 #include "./plugin.h"
 
 // ID плагина.
-extern const char* const MY_PLUGIN_ID = "tutorialPlugin.mycompany.helloclap";
+extern const char* const MY_PLUGIN_ID = "com.chillyswim.sin-t";
 
 // Cтруктура с описанием плагина - Дескриптор
 extern const clap_plugin_descriptor s_my_plugin_desc = {
