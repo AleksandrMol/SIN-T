@@ -678,7 +678,7 @@ TEST_CASE("Ошибка потока отклоняет сохранение и 
   CHECK_FALSE(fixture.state->save(fixture.plugin, &writer.stream));
 }
 
-TEST_CASE("Работающий плагин не принимает новый граф, но принимает своё же состояние") {
+TEST_CASE("Работающий плагин принимает новый граф, и он сразу виден в состоянии (D-054)") {
   PluginFixture fixture;
   const std::string preset = buildPreset(1000.0f);
 
@@ -686,13 +686,120 @@ TEST_CASE("Работающий плагин не принимает новый 
   REQUIRE(fixture.plugin->activate(fixture.plugin, SAMPLE_RATE, 1, 256));
 
   CHECK(fixture.load(preset));
-  CHECK_FALSE(fixture.load(buildPreset(2000.0f)));
   CHECK(fixture.save() == preset);
-
-  fixture.plugin->deactivate(fixture.plugin);
 
   CHECK(fixture.load(buildPreset(2000.0f)));
   CHECK(fixture.save() == buildPreset(2000.0f));
+
+  CHECK_FALSE(fixture.load("not a preset"));
+  CHECK(fixture.save() == buildPreset(2000.0f));
+
+  fixture.plugin->deactivate(fixture.plugin);
+}
+
+namespace {
+  uint32_t s_callbackRequests = 0;
+
+  uint32_t emptyEventCount(const clap_input_events_t*) {
+    return 0;
+  }
+
+  const clap_event_header_t* noEvent(const clap_input_events_t*, uint32_t) {
+    return nullptr;
+  }
+
+  /**
+   * Один блок звука, с нотами или без. Возвращает пик блока
+   */
+  float processBlock(const clap_plugin_t* plugin, const std::vector<clap_event_note_t>& notes = {}) {
+    constexpr uint32_t FRAMES = 256;
+
+    std::vector<float> left(FRAMES);
+    std::vector<float> right(FRAMES);
+    float* channels[2] = { left.data(), right.data() };
+    clap_audio_buffer_t output{};
+    output.data32 = channels;
+    output.channel_count = 2;
+
+    const clap_input_events_t events = {
+      .ctx = (void*)&notes,
+      .size = notes.empty() ? emptyEventCount : [](const clap_input_events_t* list) {
+        return (uint32_t)((const std::vector<clap_event_note_t>*)list->ctx)->size();
+      },
+      .get = notes.empty() ? noEvent : [](const clap_input_events_t* list, uint32_t index) {
+        return &(*(const std::vector<clap_event_note_t>*)list->ctx)[index].header;
+      },
+    };
+
+    clap_process_t process{};
+    process.frames_count = FRAMES;
+    process.audio_outputs = &output;
+    process.audio_outputs_count = 1;
+    process.in_events = &events;
+
+    REQUIRE(plugin->process(plugin, &process) == CLAP_PROCESS_CONTINUE);
+
+    float peak = 0.0f;
+
+    for (const float sample : left) {
+      peak = std::max(peak, std::fabs(sample));
+    }
+
+    return peak;
+  }
+}
+
+TEST_CASE("Проект открывается в порядке activate, state.load, start_processing: нота сразу идёт в его граф") {
+  PluginFixture fixture;
+
+  fixture.host.request_callback = [](const clap_host_t*) {
+    s_callbackRequests++;
+  };
+
+  REQUIRE(fixture.plugin->activate(fixture.plugin, SAMPLE_RATE, 1, 256));
+  REQUIRE(fixture.load(buildPreset()));
+  REQUIRE(fixture.plugin->start_processing(fixture.plugin));
+
+  const uint32_t requestsBefore = s_callbackRequests;
+
+  // В пресете по умолчанию есть ENV с атакой, поэтому первый блок отличает графы по пику
+  CHECK(processBlock(fixture.plugin, { makeNote(CLAP_EVENT_NOTE_ON, KEY_A4) }) == doctest::Approx(0.5f).epsilon(0.05));
+
+  // Старый план надо освободить на главном потоке
+  CHECK(s_callbackRequests > requestsBefore);
+
+  fixture.plugin->on_main_thread(fixture.plugin);
+  CHECK(processBlock(fixture.plugin) > 0.0f);
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
+}
+
+TEST_CASE("Смена состояния во время звука: on_main_thread доводит её до конца") {
+  PluginFixture fixture;
+
+  fixture.host.request_callback = [](const clap_host_t*) {
+    s_callbackRequests++;
+  };
+
+  REQUIRE(fixture.load(buildPreset()));
+  REQUIRE(fixture.plugin->activate(fixture.plugin, SAMPLE_RATE, 1, 256));
+  REQUIRE(fixture.plugin->start_processing(fixture.plugin));
+
+  processBlock(fixture.plugin, { makeNote(CLAP_EVENT_NOTE_ON, KEY_A4) });
+
+  REQUIRE(fixture.load(buildPreset(2000.0f)));
+
+  for (int block = 0; block < 8; block++) {
+    processBlock(fixture.plugin);
+    fixture.plugin->on_main_thread(fixture.plugin);
+  }
+
+  // Старая нота закончилась вместе со старым графом
+  CHECK(processBlock(fixture.plugin) == 0.0f);
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
 }
 
 namespace {

@@ -10,18 +10,21 @@ namespace {
     float sum = parameter.base->value;
 
     for (const RouteBinding& route : parameter.routes) {
-      sum += route.depth * *route.source;
+      sum += (route.fadedDepth ? *route.fadedDepth : route.depth) * *route.source;
     }
 
     return toReal(*parameter.base->descriptor, sum);
   }
 
-  void updateParameter(const ParameterBinding& parameter) {
+  void updateParameter(const ParameterBinding& parameter, PARAMETER_UPDATE update) {
     const BaseValue& base = *parameter.base;
     ParameterRamp& ramp = *parameter.ramp;
 
     // Значение без маршрутов меняется только при сглаживании базы, а пока оно стоит, считать нечего
-    if (parameter.routes.empty() && base.value == base.previous && ramp.start == ramp.end) {
+    if (update == PARAMETER_UPDATE::CHANGED
+      && parameter.routes.empty()
+      && base.value == base.previous
+      && ramp.start == ramp.end) {
       return;
     }
 
@@ -49,19 +52,25 @@ namespace {
   }
 }
 
-void runModulators(const VoiceModulation& modulation, const VoiceContext& context, uint32_t frames, float tempo) {
+void runModulators(
+  const VoiceModulation& modulation,
+  const VoiceContext& context,
+  uint32_t frames,
+  float tempo,
+  PARAMETER_UPDATE update
+) {
   for (const ModulatorBinding& modulator : modulation.modulators) {
     for (const ParameterBinding& parameter : modulator.parameters) {
-      updateParameter(parameter);
+      updateParameter(parameter, update);
     }
 
     runModulator(modulator, context, frames, tempo);
   }
 }
 
-void updateParameters(const VoiceModulation& modulation) {
+void updateParameters(const VoiceModulation& modulation, PARAMETER_UPDATE update) {
   for (const ParameterBinding& parameter : modulation.parameters) {
-    updateParameter(parameter);
+    updateParameter(parameter, update);
   }
 }
 

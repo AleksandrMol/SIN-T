@@ -3,8 +3,6 @@
 #include <algorithm>
 
 namespace {
-  constexpr uint32_t SLOTS_PER_VOICE = 2;
-
   bool isSounding(const VoiceState& voice) {
     return voice.stage == VOICE_STAGE::HELD || voice.stage == VOICE_STAGE::RELEASED;
   }
@@ -33,12 +31,20 @@ bool matchesNote(const NoteAddress& event, const NoteAddress& note) {
 }
 
 VoicePool::VoicePool() {
+  this->voices.reserve(MAX_VOICE_SLOTS);
   this->setLimit(1);
 }
 
 void VoicePool::setLimit(uint32_t limit) {
-  this->limit = std::max(limit, 1u);
-  this->voices.resize(this->limit * SLOTS_PER_VOICE);
+  this->limit = std::clamp(limit, 1u, MAX_POLYPHONY);
+
+  if (this->limit * SLOTS_PER_VOICE > this->voices.size()) {
+    this->voices.resize(this->limit * SLOTS_PER_VOICE);
+  }
+
+  while (this->countSounding() > this->limit) {
+    this->startFade(this->findVictim());
+  }
 }
 
 uint32_t VoicePool::noteOn(const NoteAddress& note, float velocity) {

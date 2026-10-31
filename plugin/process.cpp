@@ -59,5 +59,10 @@ clap_process_status my_plugin_process(
 
   instance->engine.process(left + done, right + done, totalFrames - done);
 
+  // Освобождать память и продолжать переход должен главный поток
+  if (instance->engine.takeUpdateRequest()) {
+    instance->host->request_callback(instance->host);
+  }
+
   return CLAP_PROCESS_CONTINUE; // Говорим DAW, что мы готовы обрабатывать звук дальше
 }

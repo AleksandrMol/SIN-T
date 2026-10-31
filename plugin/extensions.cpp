@@ -133,13 +133,9 @@ bool my_plug_state_load(const clap_plugin_t *plugin, const clap_istream_t *strea
     return true;
   }
 
-  // Подмены плана во время звука пока нет (этап 5), а process идёт, только пока плагин активен
-  if (instance->isActive) {
-    return false;
-  }
-
+  // Модель меняется сразу: хост может тут же сохранить состояние, а звук догонит её сам (D-054)
   instance->model = std::move(*loaded);
-  instance->engine.applyModel(*instance->model);
+  instance->engine.replaceModel(*instance->model);
 
   return true;
 }

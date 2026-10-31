@@ -15,6 +15,11 @@ namespace {
   constexpr float SILENCE_SECONDS = 0.5f;
 }
 
+GeneratorProcessor::GeneratorProcessor()
+  : velocities(MAX_VOICE_SLOTS), segmentStarts(MAX_VOICE_SLOTS), silentFrames(MAX_VOICE_SLOTS) {
+  this->reserveVoices(1);
+}
+
 void GeneratorProcessor::prepare(float sampleRate) {
   this->fadeStep = 1.0f / (FADE_SECONDS * sampleRate);
   this->silenceLimit = (uint32_t)(SILENCE_SECONDS * sampleRate);
@@ -30,15 +35,16 @@ void GeneratorProcessor::reset() {
   this->pool.clear();
 }
 
-void GeneratorProcessor::setPolyphony(uint32_t polyphony) {
+void GeneratorProcessor::reserveVoices(uint32_t polyphony) {
+  const size_t slots = (size_t)polyphony * SLOTS_PER_VOICE;
+
+  if (slots > this->voiceSlots.size()) {
+    this->voiceSlots.resize(slots);
+  }
+}
+
+void GeneratorProcessor::setLimit(uint32_t polyphony) {
   this->pool.setLimit(polyphony);
-
-  const size_t slots = this->pool.getVoices().size();
-
-  this->voiceSlots.resize(slots);
-  this->velocities.resize(slots);
-  this->segmentStarts.resize(slots);
-  this->silentFrames.resize(slots);
 }
 
 std::vector<ModuleSlots>& GeneratorProcessor::getVoiceSlots() {
@@ -73,7 +79,10 @@ void GeneratorProcessor::noteOn(
 ) {
   const uint32_t slot = this->pool.noteOn(note, velocity);
 
-  this->resetVoice(slot);
+  for (ModuleProcessor* processor : plan.subgraph->processors[slot]) {
+    processor->reset();
+  }
+
   this->velocities[slot] = velocity;
   this->silentFrames[slot] = 0;
   this->segmentStarts[slot] = position;
@@ -86,7 +95,7 @@ void GeneratorProcessor::noteOn(
 
   // Участок голоса заканчивается на границе сетки. Если нота попала на границу, участок начнётся сам
   if (position > 0) {
-    this->modulateVoice(slot, plan, clock, MAX_CHUNK_FRAMES - position);
+    this->modulateVoice(slot, plan, clock, MAX_CHUNK_FRAMES - position, PARAMETER_UPDATE::CHANGED);
   }
 }
 
@@ -98,25 +107,20 @@ void GeneratorProcessor::choke(const NoteAddress& note) {
   this->pool.choke(note);
 }
 
-void GeneratorProcessor::resetVoice(uint32_t slot) {
-  for (auto& [id, moduleSlot] : this->voiceSlots[slot]) {
-    moduleSlot.processor->reset();
-  }
-}
-
 void GeneratorProcessor::modulateVoice(
   uint32_t slot,
   const PlanGenerator& plan,
   const ModulationClock& clock,
-  uint32_t frames
+  uint32_t frames,
+  PARAMETER_UPDATE update
 ) {
   const VoiceModulation& modulation = plan.subgraph->modulation[slot];
 
-  runModulators(modulation, this->makeContext(slot, plan.parameters, clock.pitchBend), frames, clock.tempo);
-  updateParameters(modulation);
+  runModulators(modulation, this->makeContext(slot, plan.parameters, clock.pitchBend), frames, clock.tempo, update);
+  updateParameters(modulation, update);
 }
 
-void GeneratorProcessor::modulateVoices(const PlanGenerator& plan, const ModulationClock& clock) {
+void GeneratorProcessor::modulateVoices(const PlanGenerator& plan, const ModulationClock& clock, PARAMETER_UPDATE update) {
   const std::vector<VoiceState>& voices = this->pool.getVoices();
 
   for (uint32_t slot = 0; slot < voices.size(); slot++) {
@@ -131,7 +135,7 @@ void GeneratorProcessor::modulateVoices(const PlanGenerator& plan, const Modulat
     }
 
     this->segmentStarts[slot] = 0;
-    this->modulateVoice(slot, plan, clock, MAX_CHUNK_FRAMES);
+    this->modulateVoice(slot, plan, clock, MAX_CHUNK_FRAMES, update);
   }
 
   this->updateLastValues(*plan.subgraph);
@@ -219,6 +223,7 @@ void GeneratorProcessor::process(const ProcessChunk& chunk) {
       .frames = chunk.frames,
       .rampOffset = chunk.rampOffset - segmentStart,
       .rampFrames = MAX_CHUNK_FRAMES - segmentStart,
+      .gridOffset = chunk.rampOffset,
     }, context);
 
     const AudioBuffer& voiceOutput = *chunk.subgraph->output;

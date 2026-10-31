@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "../generator/generatorProcessor.h"
+#include "../planExchange/planExchange.h"
 
 namespace {
   // Зона экземпляра: главный граф или ID генератора. ID модулей начинаются с 1
@@ -114,6 +115,23 @@ namespace {
     }
 
     return order;
+  }
+
+  void assignBases(const ModuleInstance& module, std::vector<BaseValue>& values) {
+    const std::vector<ParameterDescriptor>& parameters = module.descriptor->parameters;
+
+    values = std::vector<BaseValue>(parameters.size());
+
+    for (size_t index = 0; index < parameters.size(); index++) {
+      const float value = toNormalized(parameters[index], module.parameters.at(parameters[index].key));
+      BaseValue& base = values[index];
+
+      base.descriptor = &parameters[index];
+      base.value = value;
+      base.previous = value;
+      base.target = value;
+      base.requested.store(value, std::memory_order_relaxed);
+    }
   }
 
   class ModulationCompiler {
@@ -283,7 +301,13 @@ namespace {
             }
 
             if (const ModuleInstance* source = this->findActiveSource(route, zone)) {
-              binding.routes.push_back({ this->resolveSource(route, *source, zone, voice), route.depth });
+              const auto fade = this->plan.routeFades.find({ route.source, route.target });
+
+              binding.routes.push_back({
+                this->resolveSource(route, *source, zone, voice),
+                route.depth,
+                fade != this->plan.routeFades.end() ? &fade->second.ramp.end : nullptr,
+              });
             }
           }
 
@@ -379,14 +403,22 @@ void syncParameterBases(const SynthModel& model, ParameterBases& bases) {
   });
 
   for (const auto& [id, module] : model.getModules()) {
-    std::vector<BaseValue>& values = bases[id];
+    assignBases(module, bases[id]);
+  }
+}
 
-    values.clear();
+void addParameterBases(const SynthModel& model, ParameterBases& bases, PlanExchange& exchange) {
+  for (auto it = bases.begin(); it != bases.end();) {
+    const auto current = it++;
 
-    for (const ParameterDescriptor& parameter : module.descriptor->parameters) {
-      const float value = toNormalized(parameter, module.parameters.at(parameter.key));
+    if (model.findModule(current->first) == nullptr) {
+      exchange.bury(bases.extract(current));
+    }
+  }
 
-      values.push_back({ &parameter, value, value, value, 0.0f });
+  for (const auto& [id, module] : model.getModules()) {
+    if (!bases.contains(id)) {
+      assignBases(module, bases[id]);
     }
   }
 }

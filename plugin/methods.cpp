@@ -47,7 +47,7 @@ bool my_plugin_activate(
   instance->sample_rate = (float)sample_rate; // Сохраняем частоту дискретизации
   instance->engine.prepare((float)sample_rate);
   instance->engine.reset(); // Голоса и состояния прошлого запуска или прошлого пресета не должны звучать
-  instance->isActive = true;
+  instance->engine.setLive(true); // Теперь process может идти параллельно с главным потоком
 
   return true;
 }
@@ -55,7 +55,7 @@ bool my_plugin_activate(
 void my_plugin_deactivate(const struct clap_plugin *plugin) {
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
-  instance->isActive = false;
+  instance->engine.setLive(false);
 }
 
 void my_plug_reset(const struct clap_plugin *plugin) {
@@ -71,4 +71,8 @@ bool my_plugin_start_processing(const struct clap_plugin *plugin) {
 void my_plugin_stop_processing(const struct clap_plugin *plugin) {}
 
 // Вызывается в основном потоке (Main Thread) для фоновых задач плагина
-void my_plugin_on_main_thread(const struct clap_plugin *plugin) {}
+void my_plugin_on_main_thread(const struct clap_plugin *plugin) {
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  instance->engine.update();
+}

@@ -31,8 +31,6 @@ struct MyPluginInstance {
 
   float sample_rate; // Частота дискретизации
 
-  bool isActive; // Меняется только на главном потоке
-
   ModuleRegistry registry;
   std::optional<SynthModel> model;
   Engine engine;

@@ -274,3 +274,38 @@ TEST_CASE("Clear сразу освобождает все голоса") {
 
   CHECK(countStage(pool, VOICE_STAGE::IDLE) == (int)pool.getVoices().size());
 }
+
+TEST_CASE("Уменьшение лимита забирает лишние голоса в порядке D-042") {
+  VoicePool pool = createPool(4);
+  const uint32_t oldest = pool.noteOn(note(60), 1.0f);
+  const uint32_t released = pool.noteOn(note(61), 1.0f);
+
+  pool.noteOn(note(62), 1.0f);
+  pool.noteOn(note(63), 1.0f);
+  pool.noteOff(note(61));
+
+  pool.setLimit(2);
+
+  CHECK(countStage(pool, VOICE_STAGE::FADING) == 2);
+  CHECK(pool.getVoices()[released].stage == VOICE_STAGE::FADING);
+  CHECK(pool.getVoices()[oldest].stage == VOICE_STAGE::FADING);
+}
+
+TEST_CASE("Уменьшение лимита не убирает слоты: на них могут звучать голоса") {
+  VoicePool pool = createPool(4);
+  const size_t slots = pool.getVoices().size();
+
+  pool.setLimit(1);
+
+  CHECK(pool.getVoices().size() == slots);
+}
+
+TEST_CASE("Лимит голосов ограничен пределом, под который заранее выделена память") {
+  VoicePool pool = createPool(1);
+  const VoiceState* voices = pool.getVoices().data();
+
+  pool.setLimit(MAX_POLYPHONY * 2);
+
+  CHECK(pool.getVoices().size() == MAX_VOICE_SLOTS);
+  CHECK(pool.getVoices().data() == voices);
+}

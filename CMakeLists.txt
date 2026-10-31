@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 project(sin_t CXX)
 
 option(SINT_BUILD_TESTS "Собирать unit-тесты (doctest скачивается при настройке)" ON)
+set(SINT_SANITIZER "" CACHE STRING "Санитайзер для отдельной сборки: thread или address")
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,6 +22,11 @@ if(MSVC)
   add_compile_options(/W4 /utf-8)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+if(SINT_SANITIZER)
+  add_compile_options(-fsanitize=${SINT_SANITIZER} -fno-omit-frame-pointer)
+  add_link_options(-fsanitize=${SINT_SANITIZER})
 endif()
 
 include(FetchContent)
@@ -54,6 +60,7 @@ add_library(sint_engine STATIC
   engine/oscillator/oscillator.cpp
   engine/oscillator/oscillatorProcessor.cpp
   engine/parameterDescriptor/parameterDescriptor.cpp
+  engine/planExchange/planExchange.cpp
   engine/preset/preset.cpp
   engine/stubProcessor/stubProcessor.cpp
   engine/synthModel/synthModel.cpp
@@ -117,6 +124,7 @@ if(SINT_BUILD_TESTS)
     tests/clapPlugin.test.cpp
     tests/engine.test.cpp
     tests/filter.test.cpp
+    tests/liveChanges.test.cpp
     tests/modulation.test.cpp
     tests/modulators.test.cpp
     tests/moduleRegistry.test.cpp

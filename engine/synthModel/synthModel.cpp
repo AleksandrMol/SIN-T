@@ -380,3 +380,43 @@ CommandResult SynthModel::execute(const SetRouteDepth& command) {
 
   return std::nullopt;
 }
+
+ModelTransition mergeModels(const SynthModel& previous, const SynthModel& next) {
+  ModelTransition transition = { next, next };
+  SynthModel& scheme = transition.scheme;
+
+  for (const auto& [id, module] : previous.modules) {
+    const auto [position, isAdded] = scheme.modules.try_emplace(id, module);
+
+    if (!isAdded) {
+      position->second.enabled = position->second.enabled || module.enabled;
+    }
+  }
+
+  // Провода прошлой модели циклов не образуют, поэтому новые проверяются уже относительно них
+  scheme.connections = previous.connections;
+
+  for (const Connection& connection : next.connections) {
+    if (std::ranges::contains(scheme.connections, connection)) {
+      continue;
+    }
+
+    if (scheme.hasAudioPath(connection.toModule, connection.fromModule)) {
+      std::erase(transition.settled.connections, connection);
+    } else {
+      scheme.connections.push_back(connection);
+    }
+  }
+
+  for (const ModRoute& route : previous.routes) {
+    const bool isKept = std::ranges::any_of(next.routes, [&route](const ModRoute& other) {
+      return other.source == route.source && other.target == route.target;
+    });
+
+    if (!isKept) {
+      scheme.routes.push_back(route);
+    }
+  }
+
+  return transition;
+}

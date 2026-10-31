@@ -20,6 +20,15 @@
  *
  * Используется только на главном потоке (D-023). Изменяется только через apply (D-030).
  */
+class SynthModel;
+
+struct ModelTransition;
+
+/**
+ * Собирает переход от одной модели к другой (D-053)
+ */
+ModelTransition mergeModels(const SynthModel& previous, const SynthModel& next);
+
 class SynthModel {
   public:
     /**
@@ -59,6 +68,9 @@ class SynthModel {
     // с их постоянными ID (D-011). Соединения и маршруты она проводит через обычные команды
     friend std::expected<SynthModel, std::string> loadModel(const ModuleRegistry* registry, std::string_view text);
 
+    // Схема перехода держит то, что уходит: этого нет ни в одной модели, которую могут собрать команды
+    friend ModelTransition mergeModels(const SynthModel& previous, const SynthModel& next);
+
     const ModuleRegistry* registry;
     std::map<ModuleId, ModuleInstance> modules;
     std::vector<Connection> connections;
@@ -81,4 +93,16 @@ class SynthModel {
     CommandResult execute(const AddRoute& command);
     CommandResult execute(const RemoveRoute& command);
     CommandResult execute(const SetRouteDepth& command);
+};
+
+/**
+ * Переход между двумя моделями. Удалённое ещё затухает, поэтому движок какое-то время исполняет обе сразу
+ */
+struct ModelTransition {
+  // Обе модели сразу. Модуль, отключённый в новой модели, пока исполняется
+  SynthModel scheme;
+
+  // Что останется после перехода. Новая модель без проводов, которые замкнули бы цикл с уходящими:
+  // такие провода дожидаются следующего перехода, потому что аудиограф циклов не допускает (D-007)
+  SynthModel settled;
 };

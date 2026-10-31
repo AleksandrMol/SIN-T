@@ -8,6 +8,7 @@
 
 #include "../generator/generatorProcessor.h"
 #include "../modulationCompiler/modulationCompiler.h"
+#include "../planExchange/planExchange.h"
 #include "../stubProcessor/stubProcessor.h"
 
 namespace {
@@ -112,14 +113,83 @@ namespace {
     return 0;
   }
 
-  void mixInputs(const PlanMix& mix, uint32_t frames) {
-    std::fill_n(mix.target->left.begin(), frames, 0.0f);
-    std::fill_n(mix.target->right.begin(), frames, 0.0f);
+  void mixInputs(const PlanMix& mix, const ChunkSpan& span) {
+    std::fill_n(mix.target->left.begin(), span.frames, 0.0f);
+    std::fill_n(mix.target->right.begin(), span.frames, 0.0f);
 
-    for (const AudioBuffer* source : mix.sources) {
-      for (uint32_t frame = 0; frame < frames; frame++) {
-        mix.target->left[frame] += source->left[frame];
-        mix.target->right[frame] += source->right[frame];
+    for (const PlanMixSource& source : mix.sources) {
+      for (uint32_t frame = 0; frame < span.frames; frame++) {
+        const float gain = source.gain ? source.gain->at(span.gridOffset + frame, MAX_CHUNK_FRAMES) : 1.0f;
+
+        mix.target->left[frame] += source.buffer->left[frame] * gain;
+        mix.target->right[frame] += source.buffer->right[frame] * gain;
+      }
+    }
+  }
+
+  /**
+   * Смешивает выходы модуля с тем, что он отдавал бы отключённым: суммой входов (D-040).
+   * Входы и выходы — разные буферы, поэтому сумма считается прямо из входов
+   */
+  void blendBypass(const PlanStep& step, const ChunkSpan& span) {
+    for (AudioBuffer* output : step.outputs) {
+      for (uint32_t frame = 0; frame < span.frames; frame++) {
+        const float wet = step.wet->at(span.gridOffset + frame, MAX_CHUNK_FRAMES);
+        float left = 0.0f;
+        float right = 0.0f;
+
+        for (const AudioBuffer* input : step.inputs) {
+          left += input->left[frame];
+          right += input->right[frame];
+        }
+
+        output->left[frame] = output->left[frame] * wet + left * (1.0f - wet);
+        output->right[frame] = output->right[frame] * wet + right * (1.0f - wet);
+      }
+    }
+  }
+
+  float findRouteDepth(const SynthModel& model, const ModRoute& route) {
+    return model.findModule(route.source.module)->enabled ? route.depth : 0.0f;
+  }
+
+  const ModRoute* findRoute(const SynthModel& model, const ModRoute& route) {
+    const auto it = std::ranges::find_if(model.getRoutes(), [&route](const ModRoute& other) {
+      return other.source == route.source && other.target == route.target;
+    });
+
+    return it != model.getRoutes().end() ? &*it : nullptr;
+  }
+
+  template <typename Key>
+  void addFades(const std::map<Key, FadeRange>& ranges, std::map<Key, PlanFade>& fades) {
+    for (const auto& [key, range] : ranges) {
+      fades.emplace(key, PlanFade{ { range.from, range.from }, range.from, range.to });
+    }
+  }
+
+  const ParameterRamp* findFadeRamp(const auto& fades, const auto& key) {
+    const auto it = fades.find(key);
+
+    return it != fades.end() ? &it->second.ramp : nullptr;
+  }
+
+  /**
+   * Убирает из таблицы всё, чего нет в keep. Планы могут ссылаться на убранное, поэтому удалит его exchange
+   */
+  template <typename Table>
+  void removeMissing(Table& table, const std::set<ModuleId>& keep, PlanExchange* exchange) {
+    for (auto it = table.begin(); it != table.end();) {
+      const auto current = it++;
+
+      if (keep.contains(current->first)) {
+        continue;
+      }
+
+      if (exchange) {
+        exchange->bury(table.extract(current));
+      } else {
+        table.erase(current);
       }
     }
   }
@@ -173,47 +243,79 @@ namespace {
     return members;
   }
 
-  void syncGraph(const SynthModel& model, const std::set<ModuleId>& members, ModuleSlots& slots, float sampleRate) {
-    std::erase_if(slots, [&members](const auto& slot) {
-      return !members.contains(slot.first);
-    });
+  /**
+   * Настройки одного прохода синхронизации
+   */
+  struct SlotSync {
+    float sampleRate;
+    PlanExchange* exchange;
+    SLOT_VALUES values;
+  };
+
+  /**
+   * Значения для чужих зон. Аудиопоток пишет их по адресам из плана, поэтому записи оставшихся модулей не трогаются
+   */
+  void syncLastOutputs(
+    const SynthModel& model,
+    const ModuleInstance& generator,
+    const std::set<ModuleId>& voiceMembers,
+    GeneratorProcessor& processor,
+    const SlotSync& sync
+  ) {
+    std::map<ModuleId, std::vector<float>>& lastOutputs = processor.getLastOutputs();
+    std::set<ModuleId> keep = voiceMembers;
+
+    keep.insert(generator.id);
+
+    removeMissing(lastOutputs, keep, sync.exchange);
+
+    for (const ModuleId member : keep) {
+      if (!lastOutputs.contains(member)) {
+        lastOutputs[member].resize(model.findModule(member)->descriptor->modOutputs.size());
+      }
+    }
+  }
+
+  void syncGraph(const SynthModel& model, const std::set<ModuleId>& members, ModuleSlots& slots, const SlotSync& sync) {
+    removeMissing(slots, members, sync.exchange);
 
     for (const ModuleId id : members) {
       const ModuleInstance& module = *model.findModule(id);
       ModuleSlot& slot = slots[id];
+      const bool isNew = slot.descriptor != module.descriptor;
 
-      if (slot.descriptor != module.descriptor) {
+      if (isNew) {
         createProcessor(module, slot);
-        slot.processor->prepare(sampleRate);
+        slot.processor->prepare(sync.sampleRate);
+
+        // Огибающая, появившаяся посреди ноты, начинает атаку, а не молчит до следующей ноты
+        if (sync.values == SLOT_VALUES::KEEP) {
+          slot.processor->reset();
+        }
       }
 
-      slot.parameters.clear();
+      if (isNew || sync.values == SLOT_VALUES::ASSIGN) {
+        slot.parameters.clear();
 
-      for (const ParameterDescriptor& parameter : module.descriptor->parameters) {
-        const float value = module.parameters.at(parameter.key);
+        for (const ParameterDescriptor& parameter : module.descriptor->parameters) {
+          const float value = module.parameters.at(parameter.key);
 
-        slot.parameters.push_back({ value, value });
+          slot.parameters.push_back({ value, value });
+        }
+
+        slot.modOutputs.resize(module.descriptor->modOutputs.size());
       }
-
-      slot.modOutputs.resize(module.descriptor->modOutputs.size());
 
       if (slot.generator) {
-        slot.generator->setPolyphony((uint32_t)module.parameters.at("polyphony"));
+        slot.generator->reserveVoices((uint32_t)module.parameters.at("polyphony"));
 
         const std::set<ModuleId> voiceMembers = findMembers(model, id);
 
         for (ModuleSlots& voice : slot.generator->getVoiceSlots()) {
-          syncGraph(model, voiceMembers, voice, sampleRate);
+          syncGraph(model, voiceMembers, voice, sync);
         }
 
-        std::map<ModuleId, std::vector<float>>& lastOutputs = slot.generator->getLastOutputs();
-
-        lastOutputs.clear();
-        lastOutputs[id].resize(module.descriptor->modOutputs.size());
-
-        for (const ModuleId member : voiceMembers) {
-          lastOutputs[member].resize(model.findModule(member)->descriptor->modOutputs.size());
-        }
+        syncLastOutputs(model, module, voiceMembers, *slot.generator, sync);
       }
     }
   }
@@ -233,6 +335,13 @@ namespace {
     // Размер задан сразу: шаги хранят указатели на буферы, вектор больше не перераспределяется
     graph.buffers.assign(countBuffers(model, reachable), AudioBuffer{});
     graph.voices.resize(voices.size());
+    graph.processors.resize(voices.size());
+
+    for (size_t voice = 0; voice < voices.size(); voice++) {
+      for (const auto& [id, slot] : *voices[voice]) {
+        graph.processors[voice].push_back(slot.processor.get());
+      }
+    }
 
     AudioBuffer* const silence = &graph.buffers[0];
     size_t nextBuffer = 1;
@@ -251,7 +360,13 @@ namespace {
       const ModuleDescriptor* descriptor = module->descriptor;
       const bool isOutput = id == outputId;
 
-      PlanStep step = { .mixes = {}, .inputs = {}, .outputs = outputs[id], .subgraph = nullptr };
+      PlanStep step = {
+        .mixes = {},
+        .inputs = {},
+        .outputs = outputs[id],
+        .subgraph = nullptr,
+        .wet = findFadeRamp(plan.moduleFades, id),
+      };
 
       graph.modules.push_back(id);
 
@@ -278,27 +393,34 @@ namespace {
         compileGraph(model, findVoiceOutput(model, id), generatorVoices, *subgraph, plan);
 
         step.subgraph = subgraph.get();
-        plan.generators.push_back({ id, generator, subgraph.get(), voices[0]->at(id).parameters.data() });
+        plan.generators.push_back({
+          .id = id,
+          .processor = generator,
+          .subgraph = subgraph.get(),
+          .parameters = voices[0]->at(id).parameters.data(),
+          .polyphony = (uint32_t)module->parameters.at("polyphony"),
+        });
         plan.subgraphs.push_back(std::move(subgraph));
       }
 
-      std::vector<std::vector<const AudioBuffer*>> sources(descriptor->inputs.size());
+      std::vector<std::vector<PlanMixSource>> sources(descriptor->inputs.size());
 
       for (const Connection& connection : model.getConnections()) {
         if (connection.toModule == id) {
           const ModuleDescriptor* from = model.findModule(connection.fromModule)->descriptor;
 
-          sources[findPortIndex(descriptor->inputs, connection.toPort)].push_back(
-            outputs[connection.fromModule][findPortIndex(from->outputs, connection.fromPort)]
-          );
+          sources[findPortIndex(descriptor->inputs, connection.toPort)].push_back({
+            outputs[connection.fromModule][findPortIndex(from->outputs, connection.fromPort)],
+            findFadeRamp(plan.wireFades, connection),
+          });
         }
       }
 
-      for (std::vector<const AudioBuffer*>& inputSources : sources) {
+      for (std::vector<PlanMixSource>& inputSources : sources) {
         if (inputSources.empty()) {
           step.inputs.push_back(silence);
-        } else if (inputSources.size() == 1) {
-          step.inputs.push_back(inputSources[0]);
+        } else if (inputSources.size() == 1 && !inputSources[0].gain) {
+          step.inputs.push_back(inputSources[0].buffer);
         } else {
           AudioBuffer* mix = &graph.buffers[nextBuffer++];
 
@@ -316,15 +438,77 @@ namespace {
   }
 }
 
-void syncModuleSlots(const SynthModel& model, ModuleSlots& slots, float sampleRate) {
-  syncGraph(model, findMembers(model, std::nullopt), slots, sampleRate);
+void syncModuleSlots(
+  const SynthModel& model,
+  ModuleSlots& slots,
+  float sampleRate,
+  PlanExchange* exchange,
+  SLOT_VALUES values
+) {
+  syncGraph(model, findMembers(model, std::nullopt), slots, { sampleRate, exchange, values });
 }
 
-std::unique_ptr<ExecutionPlan> compilePlan(const SynthModel& model, ModuleSlots& slots, ParameterBases& bases) {
+TransitionFades findFades(const SynthModel& previous, const SynthModel& next) {
+  TransitionFades fades;
+
+  for (const Connection& connection : next.getConnections()) {
+    if (!std::ranges::contains(previous.getConnections(), connection)) {
+      fades.wires[connection] = { 0.0f, 1.0f };
+    }
+  }
+
+  for (const Connection& connection : previous.getConnections()) {
+    if (!std::ranges::contains(next.getConnections(), connection)) {
+      fades.wires[connection] = { 1.0f, 0.0f };
+    }
+  }
+
+  for (const auto& [id, module] : next.getModules()) {
+    const ModuleInstance* before = previous.findModule(id);
+
+    if (before && before->enabled != module.enabled) {
+      fades.modules[id] = { before->enabled ? 1.0f : 0.0f, module.enabled ? 1.0f : 0.0f };
+    }
+  }
+
+  // Новый и уходящий маршруты записываются всегда: их значение в плане идёт только через переход
+  for (const ModRoute& route : next.getRoutes()) {
+    const ModRoute* before = findRoute(previous, route);
+    const float from = before ? findRouteDepth(previous, *before) : 0.0f;
+    const float to = findRouteDepth(next, route);
+
+    if (!before || from != to) {
+      fades.routes[{ route.source, route.target }] = { from, to };
+    }
+  }
+
+  for (const ModRoute& route : previous.getRoutes()) {
+    if (!findRoute(next, route)) {
+      fades.routes[{ route.source, route.target }] = { findRouteDepth(previous, route), 0.0f };
+    }
+  }
+
+  return fades;
+}
+
+std::unique_ptr<ExecutionPlan> compilePlan(
+  const SynthModel& model,
+  ModuleSlots& slots,
+  ParameterBases& bases,
+  const TransitionFades& fades
+) {
   auto plan = std::make_unique<ExecutionPlan>();
+
+  addFades(fades.wires, plan->wireFades);
+  addFades(fades.modules, plan->moduleFades);
+  addFades(fades.routes, plan->routeFades);
 
   compileGraph(model, model.getOutputId(), { &slots }, plan->main, *plan);
   compileModulation(model, slots, bases, *plan);
+
+  for (auto& [id, values] : bases) {
+    plan->bases.emplace(id, values);
+  }
 
   return plan;
 }
@@ -337,7 +521,7 @@ void runGraph(const GraphPlan& graph, uint32_t voice, const ChunkSpan& span, con
     const StepBinding& binding = bindings[index];
 
     for (const PlanMix& mix : step.mixes) {
-      mixInputs(mix, span.frames);
+      mixInputs(mix, span);
     }
 
     if (binding.processor) {
@@ -353,6 +537,10 @@ void runGraph(const GraphPlan& graph, uint32_t voice, const ChunkSpan& span, con
         .voice = &context,
         .subgraph = step.subgraph,
       });
+    }
+
+    if (step.wet) {
+      blendBypass(step, span);
     }
   }
 }

@@ -1,5 +1,7 @@
 #include "./builtinModules.h"
 
+#include "../voicePool/voicePool.h"
+
 const ModuleDescriptor OUTPUT_DESCRIPTOR = {
   .type = "output",
   .name = "Output",
@@ -26,7 +28,7 @@ const ModuleDescriptor GENERATOR_DESCRIPTOR = {
       .key = "polyphony",
       .name = "Polyphony",
       .minValue = 1.0f,
-      .maxValue = 64.0f,
+      .maxValue = (float)MAX_POLYPHONY,
       .defaultValue = 16.0f,
       .unit = "voices",
       .isStepped = true,

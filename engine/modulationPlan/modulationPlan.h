@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <vector>
@@ -12,11 +13,15 @@
  * него много голосов: иначе сглаживание пришлось бы вести в каждом голосе отдельно
  */
 struct BaseValue {
-  const ParameterDescriptor* descriptor;
-  float value;
-  float previous; // Значение на прошлом участке: по нему видно, что база ещё меняется
-  float target;
-  float step; // Изменение за участок при сглаживании
+  const ParameterDescriptor* descriptor = nullptr;
+  float value = 0.0f;
+  float previous = 0.0f; // Значение на прошлом участке: по нему видно, что база ещё меняется
+  float target = 0.0f;
+  float step = 0.0f; // Изменение за участок при сглаживании
+
+  // Новое значение от главного потока. Только последнее и нужно, поэтому очередь не требуется:
+  // ни одно изменение не потеряется и не задержит поток (D-053)
+  std::atomic<float> requested = 0.0f;
 };
 
 using ParameterBases = std::map<ModuleId, std::vector<BaseValue>>;
@@ -27,6 +32,7 @@ using ParameterBases = std::map<ModuleId, std::vector<BaseValue>>;
 struct RouteBinding {
   const float* source;
   float depth;
+  const float* fadedDepth; // Глубина меняется плавно: читается отсюда. Вне перехода пусто (D-053)
 };
 
 /**
@@ -69,15 +75,29 @@ struct VoiceModulation {
 };
 
 /**
+ * Как считать значения параметров на этом шаге
+ */
+enum class PARAMETER_UPDATE {
+  CHANGED, // Только те, что могли измениться
+  ALL, // Все: новый план мог начать исполнять модуль, значения которого давно не считались
+};
+
+/**
  * Пересчитывает модуляторы голоса в порядке зависимостей. Значения параметров модуляторов
  * меняются вместе с ними. Вызывается из аудиопотока
  */
-void runModulators(const VoiceModulation& modulation, const VoiceContext& context, uint32_t frames, float tempo);
+void runModulators(
+  const VoiceModulation& modulation,
+  const VoiceContext& context,
+  uint32_t frames,
+  float tempo,
+  PARAMETER_UPDATE update = PARAMETER_UPDATE::CHANGED
+);
 
 /**
  * Пересчитывает параметры исполняемых модулей. Вызывается после runModulators и из аудиопотока
  */
-void updateParameters(const VoiceModulation& modulation);
+void updateParameters(const VoiceModulation& modulation, PARAMETER_UPDATE update = PARAMETER_UPDATE::CHANGED);
 
 /**
  * Готовит голос к новой ноте: модуляторы выдают начальные значения, параметры принимают их

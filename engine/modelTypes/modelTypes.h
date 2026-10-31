@@ -1,10 +1,12 @@
 #pragma once
 
+#include <compare>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "../moduleDescriptor/moduleDescriptor.h"
 
@@ -42,21 +44,21 @@ struct Connection {
   ModuleId toModule;
   std::string toPort;
 
-  bool operator==(const Connection&) const = default;
+  auto operator<=>(const Connection&) const = default;
 };
 
 struct ModSource {
   ModuleId module;
   std::string output;
 
-  bool operator==(const ModSource&) const = default;
+  auto operator<=>(const ModSource&) const = default;
 };
 
 struct ModTarget {
   ModuleId module;
   std::string parameter;
 
-  bool operator==(const ModTarget&) const = default;
+  auto operator<=>(const ModTarget&) const = default;
 };
 
 /**
@@ -69,3 +71,6 @@ struct ModRoute {
 
   bool operator==(const ModRoute&) const = default;
 };
+
+// Маршрут определяется парой источник и цель: повторный такой же модель не допускает
+using RouteKey = std::pair<ModSource, ModTarget>;

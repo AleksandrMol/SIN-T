@@ -449,3 +449,105 @@ TEST_CASE_FIXTURE(Fixture, "Удаление маршрута") {
 
   this->checkRejected(RemoveRoute{ source, target });
 }
+
+TEST_CASE("Переход между моделями: схема держит и старое, и новое") {
+  Fixture fixture;
+  const ModuleId kept = fixture.add("test.osc");
+  const ModuleId removed = fixture.add("test.filter");
+
+  REQUIRE(fixture.model->apply(wire(kept, removed)).has_value());
+  REQUIRE(fixture.model->apply(wire(removed, fixture.model->getOutputId())).has_value());
+
+  const SynthModel previous = *fixture.model;
+  const ModuleId added = fixture.add("test.filter");
+
+  REQUIRE(fixture.model->apply(RemoveModule{ removed }).has_value());
+  REQUIRE(fixture.model->apply(wire(kept, added)).has_value());
+
+  const ModelTransition transition = mergeModels(previous, *fixture.model);
+
+  CHECK(transition.settled == *fixture.model);
+  CHECK(transition.scheme.findModule(removed) != nullptr);
+  CHECK(transition.scheme.findModule(added) != nullptr);
+  CHECK(transition.scheme.getConnections().size() == 3);
+}
+
+TEST_CASE("Переход между моделями: модуль исполняется, пока затухает его отключение") {
+  Fixture fixture;
+  const ModuleId osc = fixture.add("test.osc");
+  const SynthModel previous = *fixture.model;
+
+  REQUIRE(fixture.model->apply(SetModuleEnabled{ osc, false }).has_value());
+
+  const ModelTransition switchOff = mergeModels(previous, *fixture.model);
+  const ModelTransition switchOn = mergeModels(*fixture.model, previous);
+
+  CHECK(switchOff.scheme.findModule(osc)->enabled);
+  CHECK(switchOn.scheme.findModule(osc)->enabled);
+  CHECK_FALSE(switchOff.settled.findModule(osc)->enabled);
+}
+
+TEST_CASE("Переход между моделями: уходящий маршрут остаётся в схеме, а у оставшегося глубина новая") {
+  Fixture fixture;
+  const ModuleId lfo = fixture.add("test.lfo");
+  const ModuleId other = fixture.add("test.lfo");
+  const ModuleId filter = fixture.add("test.filter");
+  const ModRoute kept = route(lfo, filter, "cutoff", 0.25f);
+  const ModRoute removed = route(other, filter, "cutoff", 0.5f);
+
+  REQUIRE(fixture.model->apply(AddRoute{ kept }).has_value());
+  REQUIRE(fixture.model->apply(AddRoute{ removed }).has_value());
+
+  const SynthModel previous = *fixture.model;
+
+  REQUIRE(fixture.model->apply(RemoveRoute{ removed.source, removed.target }).has_value());
+  REQUIRE(fixture.model->apply(SetRouteDepth{ kept.source, kept.target, 0.75f }).has_value());
+
+  const std::vector<ModRoute> routes = mergeModels(previous, *fixture.model).scheme.getRoutes();
+
+  REQUIRE(routes.size() == 2);
+  CHECK(routes[0].depth == 0.75f);
+  CHECK(routes[1] == removed);
+}
+
+TEST_CASE("Переход между моделями: маршруты одного источника различаются по цели") {
+  Fixture fixture;
+  const ModuleId lfo = fixture.add("test.lfo");
+  const ModuleId first = fixture.add("test.filter");
+  const ModuleId second = fixture.add("test.filter");
+  const ModRoute removed = route(lfo, first, "cutoff");
+
+  REQUIRE(fixture.model->apply(AddRoute{ removed }).has_value());
+  REQUIRE(fixture.model->apply(AddRoute{ route(lfo, second, "cutoff") }).has_value());
+
+  const SynthModel previous = *fixture.model;
+
+  REQUIRE(fixture.model->apply(RemoveRoute{ removed.source, removed.target }).has_value());
+
+  CHECK(mergeModels(previous, *fixture.model).scheme.getRoutes().size() == 2);
+}
+
+TEST_CASE("Переход между моделями: провод, образующий цикл с уходящими, откладывается (D-007)") {
+  Fixture fixture;
+  const ModuleId first = fixture.add("test.filter");
+  const ModuleId second = fixture.add("test.filter");
+
+  REQUIRE(fixture.model->apply(wire(first, second)).has_value());
+
+  const SynthModel previous = *fixture.model;
+  const Connection reversed = { second, "out", first, "in" };
+
+  REQUIRE(fixture.model->apply(Disconnect{ { first, "out", second, "in" } }).has_value());
+  REQUIRE(fixture.model->apply(Connect{ reversed }).has_value());
+
+  const ModelTransition transition = mergeModels(previous, *fixture.model);
+
+  CHECK(transition.scheme.getConnections() == previous.getConnections());
+  CHECK(transition.settled.getConnections().empty());
+
+  // Следующий переход идёт уже от модели без уходящего провода
+  const ModelTransition next = mergeModels(transition.settled, *fixture.model);
+
+  CHECK(next.scheme.getConnections() == std::vector<Connection>{ reversed });
+  CHECK(next.settled == *fixture.model);
+}
