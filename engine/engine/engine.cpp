@@ -2,19 +2,7 @@
 
 #include <algorithm>
 
-namespace {
-  void mixInputs(const PlanMix& mix, uint32_t frames) {
-    std::fill_n(mix.target->left.begin(), frames, 0.0f);
-    std::fill_n(mix.target->right.begin(), frames, 0.0f);
-
-    for (const AudioBuffer* source : mix.sources) {
-      for (uint32_t frame = 0; frame < frames; frame++) {
-        mix.target->left[frame] += source->left[frame];
-        mix.target->right[frame] += source->right[frame];
-      }
-    }
-  }
-}
+#include "../generator/generatorProcessor.h"
 
 void Engine::prepare(float sampleRate) {
   this->sampleRate = sampleRate;
@@ -30,23 +18,57 @@ void Engine::applyModel(const SynthModel& model) {
   this->plan = compilePlan(model, this->slots);
 }
 
-void Engine::processChunk(uint32_t frames) {
-  for (const PlanStep& step : this->plan->steps) {
-    for (const PlanMix& mix : step.mixes) {
-      mixInputs(mix, frames);
-    }
-
-    if (step.processor) {
-      step.processor->process({
-        .frames = frames,
-        .inputCount = (uint32_t)step.inputs.size(),
-        .outputCount = (uint32_t)step.outputs.size(),
-        .inputs = step.inputs.data(),
-        .outputs = step.outputs.data(),
-        .parameters = step.parameters,
-      });
-    }
+void Engine::reset() {
+  for (auto& [id, slot] : this->slots) {
+    slot.processor->reset();
   }
+
+  this->pitchBend = 0.0f;
+  this->chunkPosition = 0;
+}
+
+void Engine::noteOn(const NoteAddress& note, float velocity) {
+  if (!this->plan) {
+    return;
+  }
+
+  for (GeneratorProcessor* generator : this->plan->generators) {
+    generator->noteOn(note, velocity);
+  }
+}
+
+void Engine::noteOff(const NoteAddress& note) {
+  if (!this->plan) {
+    return;
+  }
+
+  for (GeneratorProcessor* generator : this->plan->generators) {
+    generator->noteOff(note);
+  }
+}
+
+void Engine::choke(const NoteAddress& note) {
+  if (!this->plan) {
+    return;
+  }
+
+  for (GeneratorProcessor* generator : this->plan->generators) {
+    generator->choke(note);
+  }
+}
+
+void Engine::setPitchBend(float value) {
+  this->pitchBend = value;
+}
+
+void Engine::processChunk(uint32_t frames) {
+  const VoiceContext context = {
+    .pitch = REFERENCE_PITCH,
+    .velocity = 1.0f,
+    .pitchBend = this->pitchBend,
+  };
+
+  runGraph(this->plan->main, 0, frames, context);
 }
 
 void Engine::process(float* left, float* right, uint32_t frames) {
@@ -63,8 +85,8 @@ void Engine::process(float* left, float* right, uint32_t frames) {
 
     this->processChunk(count);
 
-    std::copy_n(this->plan->output->left.begin(), count, left + done);
-    std::copy_n(this->plan->output->right.begin(), count, right + done);
+    std::copy_n(this->plan->main.output->left.begin(), count, left + done);
+    std::copy_n(this->plan->main.output->right.begin(), count, right + done);
 
     done += count;
     this->chunkPosition = (this->chunkPosition + count) % MAX_CHUNK_FRAMES;

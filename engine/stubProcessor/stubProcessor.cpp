@@ -2,6 +2,8 @@
 
 void StubProcessor::prepare(float) {}
 
+void StubProcessor::reset() {}
+
 void StubProcessor::process(const ProcessChunk& chunk) {
   for (uint32_t output = 0; output < chunk.outputCount; output++) {
     AudioBuffer& target = *chunk.outputs[output];

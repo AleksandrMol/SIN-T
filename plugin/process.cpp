@@ -1,5 +1,7 @@
 #include "./plugin.h"
 
+#include <algorithm>
+
 bool checkAudioOutputs (const clap_process_t *process) {
   // 1. Проверяем, что вообще есть выходные аудио-шины
   if (process->audio_outputs_count < 1) {
@@ -30,42 +32,30 @@ clap_process_status my_plugin_process(
 ) {
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
-  const uint32_t total_frames = process->frames_count;
-  const uint32_t num_events = process->in_events->size(process->in_events);
-  uint32_t event_index = 0;
-
   if(!checkAudioOutputs(process)) {
     return CLAP_PROCESS_CONTINUE;
   }
 
-  if (instance->useGraph) {
-    instance->engine.process(process->audio_outputs[0].data32[0], process->audio_outputs[0].data32[1], total_frames);
+  float* left = process->audio_outputs[0].data32[0];
+  float* right = process->audio_outputs[0].data32[1];
+  const uint32_t totalFrames = process->frames_count;
+  const uint32_t eventCount = process->in_events->size(process->in_events);
+  uint32_t done = 0;
 
-    return CLAP_PROCESS_CONTINUE;
-  }
+  // Звук до события считается отдельно: так нота начинается точно в свой сэмпл (D-008)
+  for (uint32_t index = 0; index < eventCount; index++) {
+    const clap_event_header_t* event = process->in_events->get(process->in_events, index);
+    const uint32_t time = std::min(event->time, totalFrames);
 
-  // Цикл по каждому сэмплу в текущем аудио-блоке
-  for (uint32_t frame = 0; frame < total_frames; ++frame) {
-
-    // EVENTS
-    while (event_index < num_events) {
-      const clap_event_header_t* event_header = process->in_events->get(process->in_events, event_index);
-
-      if (event_header->time > frame) {
-        break;
-      }
-
-      my_plug_process_event(instance, event_header);
-
-      event_index++;
+    if (time > done) {
+      instance->engine.process(left + done, right + done, time - done);
+      done = time;
     }
 
-    instance->gen.process();
-
-    // Запись результата работы прагина в аудиовыходы
-    process->audio_outputs[0].data32[0][frame] = instance->gen.getOutput();
-    process->audio_outputs[0].data32[1][frame] = instance->gen.getOutput();
+    my_plug_process_event(instance, event);
   }
+
+  instance->engine.process(left + done, right + done, totalFrames - done);
 
   return CLAP_PROCESS_CONTINUE; // Говорим DAW, что мы готовы обрабатывать звук дальше
 }

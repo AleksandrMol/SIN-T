@@ -9,12 +9,16 @@
 #include "../stubProcessor/stubProcessor.h"
 #include "../synthModel/synthModel.h"
 
+class GeneratorProcessor;
+
 /**
  * Состояние модуля в движке. Живёт отдельно от плана и переживает его смену (D-023)
  */
 struct ModuleSlot {
+  const ModuleDescriptor* descriptor = nullptr; // В другом пресете тот же ID может быть у модуля другого типа
   std::unique_ptr<ModuleProcessor> processor;
   std::vector<ParameterRamp> parameters;
+  GeneratorProcessor* generator = nullptr; // Тот же processor, если модуль — генератор
 };
 
 using ModuleSlots = std::map<ModuleId, ModuleSlot>;
@@ -28,35 +32,59 @@ struct PlanMix {
 };
 
 /**
- * Один шаг плана. У выхода графа processor пуст: от него нужны только смешанные входы
+ * Один шаг плана: соединения модуля. Общие для всех голосов графа
  */
 struct PlanStep {
-  ModuleProcessor* processor;
-  const ParameterRamp* parameters;
   std::vector<PlanMix> mixes;
   std::vector<const AudioBuffer*> inputs;
   std::vector<AudioBuffer*> outputs;
+  const GraphPlan* subgraph; // Подграф, если шаг исполняет генератор
 };
 
 /**
- * План исполнения: порядок модулей и буферы соединений. Неизменяемый, собирается не в аудиопотоке (D-023)
+ * Что исполняет шаг в конкретном голосе. У выхода графа processor пуст: от него нужны только смешанные входы
  */
-struct ExecutionPlan {
+struct StepBinding {
+  ModuleProcessor* processor;
+  const ParameterRamp* parameters;
+};
+
+/**
+ * План одного графа. Главный граф и подграф устроены одинаково (D-004): у главного один голос.
+ * Голоса считаются по очереди, поэтому буферы у них общие, а свои только состояния модулей
+ */
+struct GraphPlan {
   std::vector<AudioBuffer> buffers; // Память всех буферов, на неё указывают шаги
   std::vector<PlanStep> steps;
+  std::vector<std::vector<StepBinding>> voices; // [голос][шаг]
   const AudioBuffer* output;
   StubProcessor bypass; // Заменяет отключённые модули. Состояния нет, поэтому один на все шаги (D-040)
 };
 
 /**
+ * План исполнения. Неизменяемый, собирается не в аудиопотоке (D-023)
+ */
+struct ExecutionPlan {
+  GraphPlan main;
+  std::vector<std::unique_ptr<GraphPlan>> subgraphs;
+  std::vector<GeneratorProcessor*> generators; // Получают ноты: включённые и дошедшие до выхода
+};
+
+/**
  * Приводит состояния модулей в соответствие с моделью: создаёт новые, удаляет исчезнувшие,
- * обновляет значения параметров. Состояния существующих модулей не трогает
+ * обновляет значения параметров. Состояния существующих модулей не трогает.
+ * Состояния подграфа создаются на каждый слот голоса генератора
  */
 void syncModuleSlots(const SynthModel& model, ModuleSlots& slots, float sampleRate);
 
 /**
- * Собирает план главного графа. Исполняются только модули, от которых сигнал доходит до выхода.
+ * Собирает план главного графа и подграфов. Исполняются только модули, от которых сигнал доходит до выхода.
  * Отключённый модуль не исполняется и не меняет своё состояние, вместо него работает заглушка.
  * Состояния должны быть приведены в соответствие с моделью
  */
 std::unique_ptr<ExecutionPlan> compilePlan(const SynthModel& model, ModuleSlots& slots);
+
+/**
+ * Исполняет граф для одного голоса. Вызывается из аудиопотока
+ */
+void runGraph(const GraphPlan& graph, uint32_t voice, uint32_t frames, const VoiceContext& context);

@@ -1,5 +1,36 @@
 #include "./plugin.h"
 
+namespace {
+  constexpr uint8_t MIDI_NOTE_OFF = 0x80;
+  constexpr uint8_t MIDI_NOTE_ON = 0x90;
+  constexpr uint8_t MIDI_PITCH_BEND = 0xE0;
+  constexpr float MIDI_MAX_VALUE = 127.0f;
+  constexpr float MIDI_PITCH_BEND_CENTER = 8192.0f;
+
+  NoteAddress toAddress(const clap_event_note_t *ev) {
+    return { ev->note_id, ev->port_index, ev->channel, ev->key };
+  }
+
+  /**
+   * Сырое MIDI: так приходит pitch bend, а хост может прислать в таком виде и ноты
+   */
+  void processMidi(MyPluginInstance *instance, const clap_event_midi_t *ev) {
+    const uint8_t status = ev->data[0] & 0xF0;
+    const NoteAddress note = { -1, (int16_t)ev->port_index, (int16_t)(ev->data[0] & 0x0F), ev->data[1] };
+
+    if (status == MIDI_NOTE_ON && ev->data[2] > 0) {
+      instance->engine.noteOn(note, (float)ev->data[2] / MIDI_MAX_VALUE);
+    } else if (status == MIDI_NOTE_OFF || status == MIDI_NOTE_ON) {
+      // В MIDI 1 note on с нулевой velocity означает отпускание, в отличие от события CLAP
+      instance->engine.noteOff(note);
+    } else if (status == MIDI_PITCH_BEND) {
+      const int value = ev->data[1] | (ev->data[2] << 7);
+
+      instance->engine.setPitchBend(((float)value - MIDI_PITCH_BEND_CENTER) / MIDI_PITCH_BEND_CENTER);
+    }
+  }
+}
+
 /**
  * Функция для обработки событий
  */
@@ -8,24 +39,26 @@ void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t
       switch (event_header->type) {
         case CLAP_EVENT_NOTE_ON: {
           const clap_event_note_t *ev = (const clap_event_note_t *)event_header;
-            if (ev->velocity == 0.0) {
-              instance->gen.noteOff(ev->key);
-            } else {
-              instance->gen.noteOn(ev->key);
-            }
+
+          // Нулевая velocity в CLAP допустима и не означает отпускание ноты.
+          // Note on без порта, канала или клавиши CLAP разрешает игнорировать
+          if (ev->port_index >= 0 && ev->channel >= 0 && ev->key >= 0) {
+            instance->engine.noteOn(toAddress(ev), (float)ev->velocity);
+          }
           break;
         }
 
         case CLAP_EVENT_NOTE_OFF: {
           const clap_event_note_t *ev = (const clap_event_note_t *)event_header;
 
-          instance->gen.noteOff(ev->key);
+          instance->engine.noteOff(toAddress(ev));
           break;
         }
 
         case CLAP_EVENT_NOTE_CHOKE: {
-          // const clap_event_note_t *ev = (const clap_event_note_t *)event_header;
-          // TODO: handle note choke
+          const clap_event_note_t *ev = (const clap_event_note_t *)event_header;
+
+          instance->engine.choke(toAddress(ev));
           break;
         }
 
@@ -54,8 +87,7 @@ void my_plug_process_event(MyPluginInstance *instance, const clap_event_header_t
         }
 
         case CLAP_EVENT_MIDI: {
-          // const clap_event_midi_t *ev = (const clap_event_midi_t *)event_header;
-          // TODO: handle MIDI event
+          processMidi(instance, (const clap_event_midi_t *)event_header);
           break;
         }
 

@@ -3,6 +3,6 @@
 #include <cstdint>
 
 /*
-  Функция для перевода номера клавиши MIDI в частоту волны
+  Функция для перевода номера клавиши MIDI в частоту волны. Номер может быть дробным
 */
-float midiToFreq (int32_t note);
+float midiToFreq (float note);

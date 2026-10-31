@@ -36,13 +36,15 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 # DSP и модель. DSP без сторонних библиотек (D-002), JSON нужен только пресетам (D-020)
 add_library(sint_engine STATIC
+  engine/amp/ampProcessor.cpp
   engine/builtinModules/builtinModules.cpp
+  engine/defaultPreset/defaultPreset.cpp
   engine/engine/engine.cpp
   engine/envelope/envelope.cpp
   engine/executionPlan/executionPlan.cpp
   engine/filter/filter.cpp
   engine/filter/filterProcessor.cpp
-  engine/generator/generator.cpp
+  engine/generator/generatorProcessor.cpp
   engine/lfo/lfo.cpp
   engine/moduleCatalog/moduleCatalog.cpp
   engine/moduleDescriptor/moduleDescriptor.cpp
@@ -53,7 +55,7 @@ add_library(sint_engine STATIC
   engine/preset/preset.cpp
   engine/stubProcessor/stubProcessor.cpp
   engine/synthModel/synthModel.cpp
-  engine/voice/voice.cpp
+  engine/voicePool/voicePool.cpp
   tools/tools.cpp
 )
 target_include_directories(sint_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -117,9 +119,11 @@ if(SINT_BUILD_TESTS)
     tests/moduleRegistry.test.cpp
     tests/oscillator.test.cpp
     tests/parameterDescriptor.test.cpp
+    tests/polyphony.test.cpp
     tests/preset.test.cpp
     tests/synthModel.test.cpp
     tests/tools.test.cpp
+    tests/voicePool.test.cpp
     tests/wav.test.cpp
   )
   target_link_libraries(sint_tests PRIVATE sint_offline doctest::doctest nlohmann_json::nlohmann_json)

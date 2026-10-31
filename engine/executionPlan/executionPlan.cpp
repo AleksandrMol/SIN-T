@@ -6,14 +6,15 @@
 #include <string>
 #include <utility>
 
+#include "../generator/generatorProcessor.h"
 #include "../stubProcessor/stubProcessor.h"
 
 namespace {
   /**
-   * Модули главного графа, от которых сигнал доходит до выхода
+   * Модули графа, от которых сигнал доходит до выхода
    */
-  std::set<ModuleId> findReachable(const SynthModel& model) {
-    std::vector<ModuleId> pending = { model.getOutputId() };
+  std::set<ModuleId> findReachable(const SynthModel& model, ModuleId outputId) {
+    std::vector<ModuleId> pending = { outputId };
     std::set<ModuleId> reachable;
 
     while (!pending.empty()) {
@@ -99,101 +100,208 @@ namespace {
 
     return count;
   }
+
+  ModuleId findVoiceOutput(const SynthModel& model, ModuleId generator) {
+    for (const auto& [id, module] : model.getModules()) {
+      if (module.owner == generator && module.descriptor->role == MODULE_ROLE::OUTPUT) {
+        return id;
+      }
+    }
+
+    return 0;
+  }
+
+  void mixInputs(const PlanMix& mix, uint32_t frames) {
+    std::fill_n(mix.target->left.begin(), frames, 0.0f);
+    std::fill_n(mix.target->right.begin(), frames, 0.0f);
+
+    for (const AudioBuffer* source : mix.sources) {
+      for (uint32_t frame = 0; frame < frames; frame++) {
+        mix.target->left[frame] += source->left[frame];
+        mix.target->right[frame] += source->right[frame];
+      }
+    }
+  }
+
+  void createProcessor(const ModuleInstance& module, ModuleSlot& slot) {
+    slot.descriptor = module.descriptor;
+    slot.generator = nullptr;
+
+    if (module.descriptor->role == MODULE_ROLE::GENERATOR) {
+      auto generator = std::make_unique<GeneratorProcessor>();
+
+      slot.generator = generator.get();
+      slot.processor = std::move(generator);
+    } else {
+      slot.processor = module.descriptor->createProcessor ? module.descriptor->createProcessor() : createStubProcessor();
+    }
+  }
+
+  void syncGraph(const SynthModel& model, std::optional<ModuleId> owner, ModuleSlots& slots, float sampleRate) {
+    std::erase_if(slots, [&model](const auto& slot) {
+      return model.findModule(slot.first) == nullptr;
+    });
+
+    for (const auto& [id, module] : model.getModules()) {
+      if (module.owner != owner || module.descriptor->role == MODULE_ROLE::OUTPUT) {
+        continue;
+      }
+
+      ModuleSlot& slot = slots[id];
+
+      if (slot.descriptor != module.descriptor) {
+        createProcessor(module, slot);
+        slot.processor->prepare(sampleRate);
+      }
+
+      slot.parameters.clear();
+
+      for (const ParameterDescriptor& parameter : module.descriptor->parameters) {
+        const float value = module.parameters.at(parameter.key);
+
+        slot.parameters.push_back({ value, value });
+      }
+
+      if (slot.generator) {
+        slot.generator->setPolyphony((uint32_t)module.parameters.at("polyphony"));
+
+        for (ModuleSlots& voice : slot.generator->getVoiceSlots()) {
+          syncGraph(model, id, voice, sampleRate);
+        }
+      }
+    }
+  }
+
+  /**
+   * Собирает план одного графа: voices — состояния модулей по голосам. Генератор собирает свой подграф тем же кодом
+   */
+  void compileGraph(
+    const SynthModel& model,
+    ModuleId outputId,
+    const std::vector<ModuleSlots*>& voices,
+    GraphPlan& graph,
+    ExecutionPlan& plan
+  ) {
+    const std::set<ModuleId> reachable = findReachable(model, outputId);
+
+    // Размер задан сразу: шаги хранят указатели на буферы, вектор больше не перераспределяется
+    graph.buffers.assign(countBuffers(model, reachable), AudioBuffer{});
+    graph.voices.resize(voices.size());
+
+    AudioBuffer* const silence = &graph.buffers[0];
+    size_t nextBuffer = 1;
+
+    // Выходы всех модулей раздаются заранее, чтобы входы могли на них сослаться
+    std::map<ModuleId, std::vector<AudioBuffer*>> outputs;
+
+    for (const ModuleId id : reachable) {
+      for (size_t port = 0; port < model.findModule(id)->descriptor->outputs.size(); port++) {
+        outputs[id].push_back(&graph.buffers[nextBuffer++]);
+      }
+    }
+
+    for (const ModuleId id : sortModules(model, reachable)) {
+      const ModuleInstance* module = model.findModule(id);
+      const ModuleDescriptor* descriptor = module->descriptor;
+      const bool isOutput = id == outputId;
+
+      PlanStep step = { .mixes = {}, .inputs = {}, .outputs = outputs[id], .subgraph = nullptr };
+
+      for (size_t voice = 0; voice < voices.size(); voice++) {
+        ModuleSlot* slot = isOutput ? nullptr : &voices[voice]->at(id);
+        ModuleProcessor* processor = slot ? slot->processor.get() : nullptr;
+
+        graph.voices[voice].push_back({
+          .processor = module->enabled ? processor : &graph.bypass,
+          .parameters = slot ? slot->parameters.data() : nullptr,
+        });
+      }
+
+      if (descriptor->role == MODULE_ROLE::GENERATOR && module->enabled) {
+        GeneratorProcessor* generator = voices[0]->at(id).generator;
+        std::vector<ModuleSlots*> generatorVoices;
+
+        for (ModuleSlots& voice : generator->getVoiceSlots()) {
+          generatorVoices.push_back(&voice);
+        }
+
+        auto subgraph = std::make_unique<GraphPlan>();
+
+        compileGraph(model, findVoiceOutput(model, id), generatorVoices, *subgraph, plan);
+
+        step.subgraph = subgraph.get();
+        plan.subgraphs.push_back(std::move(subgraph));
+        plan.generators.push_back(generator);
+      }
+
+      std::vector<std::vector<const AudioBuffer*>> sources(descriptor->inputs.size());
+
+      for (const Connection& connection : model.getConnections()) {
+        if (connection.toModule == id) {
+          const ModuleDescriptor* from = model.findModule(connection.fromModule)->descriptor;
+
+          sources[findPortIndex(descriptor->inputs, connection.toPort)].push_back(
+            outputs[connection.fromModule][findPortIndex(from->outputs, connection.fromPort)]
+          );
+        }
+      }
+
+      for (std::vector<const AudioBuffer*>& inputSources : sources) {
+        if (inputSources.empty()) {
+          step.inputs.push_back(silence);
+        } else if (inputSources.size() == 1) {
+          step.inputs.push_back(inputSources[0]);
+        } else {
+          AudioBuffer* mix = &graph.buffers[nextBuffer++];
+
+          step.inputs.push_back(mix);
+          step.mixes.push_back({ mix, std::move(inputSources) });
+        }
+      }
+
+      if (isOutput) {
+        graph.output = step.inputs[0];
+      }
+
+      graph.steps.push_back(std::move(step));
+    }
+  }
 }
 
 void syncModuleSlots(const SynthModel& model, ModuleSlots& slots, float sampleRate) {
-  // До этапа 3 исполняется только главный граф, а состояния голосов там будут свои
-  std::erase_if(slots, [&model](const auto& slot) {
-    return model.findModule(slot.first) == nullptr;
-  });
-
-  for (const auto& [id, module] : model.getModules()) {
-    if (module.owner || module.descriptor->role == MODULE_ROLE::OUTPUT) {
-      continue;
-    }
-
-    ModuleSlot& slot = slots[id];
-
-    if (!slot.processor) {
-      slot.processor = module.descriptor->createProcessor ? module.descriptor->createProcessor() : createStubProcessor();
-      slot.processor->prepare(sampleRate);
-    }
-
-    slot.parameters.clear();
-
-    for (const ParameterDescriptor& parameter : module.descriptor->parameters) {
-      const float value = module.parameters.at(parameter.key);
-
-      slot.parameters.push_back({ value, value });
-    }
-  }
+  syncGraph(model, std::nullopt, slots, sampleRate);
 }
 
 std::unique_ptr<ExecutionPlan> compilePlan(const SynthModel& model, ModuleSlots& slots) {
-  const std::set<ModuleId> reachable = findReachable(model);
-
   auto plan = std::make_unique<ExecutionPlan>();
 
-  // Размер задан сразу: шаги хранят указатели на буферы, вектор больше не перераспределяется
-  plan->buffers.assign(countBuffers(model, reachable), AudioBuffer{});
-
-  AudioBuffer* const silence = &plan->buffers[0];
-  size_t nextBuffer = 1;
-
-  // Выходы всех модулей раздаются заранее, чтобы входы могли на них сослаться
-  std::map<ModuleId, std::vector<AudioBuffer*>> outputs;
-
-  for (const ModuleId id : reachable) {
-    for (size_t port = 0; port < model.findModule(id)->descriptor->outputs.size(); port++) {
-      outputs[id].push_back(&plan->buffers[nextBuffer++]);
-    }
-  }
-
-  for (const ModuleId id : sortModules(model, reachable)) {
-    const ModuleInstance* module = model.findModule(id);
-    const ModuleDescriptor* descriptor = module->descriptor;
-    const bool isOutput = id == model.getOutputId();
-    ModuleProcessor* const processor = isOutput ? nullptr : slots.at(id).processor.get();
-
-    PlanStep step = {
-      .processor = module->enabled ? processor : &plan->bypass,
-      .parameters = isOutput ? nullptr : slots.at(id).parameters.data(),
-      .mixes = {},
-      .inputs = {},
-      .outputs = outputs[id],
-    };
-
-    std::vector<std::vector<const AudioBuffer*>> sources(descriptor->inputs.size());
-
-    for (const Connection& connection : model.getConnections()) {
-      if (connection.toModule == id) {
-        const ModuleDescriptor* from = model.findModule(connection.fromModule)->descriptor;
-
-        sources[findPortIndex(descriptor->inputs, connection.toPort)].push_back(
-          outputs[connection.fromModule][findPortIndex(from->outputs, connection.fromPort)]
-        );
-      }
-    }
-
-    for (std::vector<const AudioBuffer*>& inputSources : sources) {
-      if (inputSources.empty()) {
-        step.inputs.push_back(silence);
-      } else if (inputSources.size() == 1) {
-        step.inputs.push_back(inputSources[0]);
-      } else {
-        AudioBuffer* mix = &plan->buffers[nextBuffer++];
-
-        step.inputs.push_back(mix);
-        step.mixes.push_back({ mix, std::move(inputSources) });
-      }
-    }
-
-    if (isOutput) {
-      plan->output = step.inputs[0];
-    }
-
-    plan->steps.push_back(std::move(step));
-  }
+  compileGraph(model, model.getOutputId(), { &slots }, plan->main, *plan);
 
   return plan;
+}
+
+void runGraph(const GraphPlan& graph, uint32_t voice, uint32_t frames, const VoiceContext& context) {
+  const std::vector<StepBinding>& bindings = graph.voices[voice];
+
+  for (size_t index = 0; index < graph.steps.size(); index++) {
+    const PlanStep& step = graph.steps[index];
+    const StepBinding& binding = bindings[index];
+
+    for (const PlanMix& mix : step.mixes) {
+      mixInputs(mix, frames);
+    }
+
+    if (binding.processor) {
+      binding.processor->process({
+        .frames = frames,
+        .inputCount = (uint32_t)step.inputs.size(),
+        .outputCount = (uint32_t)step.outputs.size(),
+        .inputs = step.inputs.data(),
+        .outputs = step.outputs.data(),
+        .parameters = binding.parameters,
+        .voice = &context,
+        .subgraph = step.subgraph,
+      });
+    }
+  }
 }

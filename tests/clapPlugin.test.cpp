@@ -22,8 +22,12 @@
 namespace {
   constexpr uint32_t SAMPLE_RATE = 48000;
 
-  // Время релиза огибающей по умолчанию: 1200 мс
-  constexpr uint32_t RELEASE_FRAMES = 1200 * SAMPLE_RATE / 1000;
+  // Быстрое затухание голоса: 10 мс
+  constexpr uint32_t FADE_FRAMES = 10 * SAMPLE_RATE / 1000;
+  constexpr uint32_t CHUNK_FRAMES = 32;
+
+  // Нота A4, 440 Гц
+  constexpr int16_t KEY_A4 = 69;
 
   const clap_plugin_factory_t* getFactory() {
     return (const clap_plugin_factory_t*)clap_entry.get_factory(CLAP_PLUGIN_FACTORY_ID);
@@ -62,29 +66,68 @@ namespace {
   }
 
   /**
-   * Пресет: синус заданной частоты идёт через фильтр на выход
+   * Пресет: в генераторе синус идёт через фильтр, сумма голосов идёт на выход
    */
-  std::string buildPreset(float frequency, float cutoff = 20000.0f, bool isFilterEnabled = true) {
+  std::string buildPreset(float cutoff = 20000.0f, bool isFilterEnabled = true) {
     ModuleRegistry registry;
     REQUIRE(addAllModules(registry).has_value());
 
     SynthModel model(&registry);
-    const ModuleId osc = **model.apply(AddModule{ "oscillator" });
-    const ModuleId filter = **model.apply(AddModule{ "filter" });
+    const ModuleId generator = **model.apply(AddModule{ "generator" });
+    const ModuleId osc = **model.apply(AddModule{ "oscillator", generator });
+    const ModuleId filter = **model.apply(AddModule{ "filter", generator });
+    ModuleId voiceOutput = 0;
+
+    for (const auto& [id, module] : model.getModules()) {
+      if (module.owner == generator && module.descriptor->role == MODULE_ROLE::OUTPUT) {
+        voiceOutput = id;
+      }
+    }
 
     for (const Command& command : std::initializer_list<Command>{
       SetParameter{ osc, "wave", 1.0f },
-      SetParameter{ osc, "frequency", frequency },
       SetParameter{ osc, "level", 0.5f },
       SetParameter{ filter, "cutoff", cutoff },
       SetModuleEnabled{ filter, isFilterEnabled },
       Connect{ { osc, "out", filter, "in" } },
-      Connect{ { filter, "out", model.getOutputId(), "in" } },
+      Connect{ { filter, "out", voiceOutput, "in" } },
+      Connect{ { generator, "out", model.getOutputId(), "in" } },
     }) {
       REQUIRE(model.apply(command).has_value());
     }
 
     return saveModel(model);
+  }
+
+  /**
+   * Нота, которую не отпускают до конца рендера
+   */
+  std::vector<OfflineNote> heldNote(int16_t key = KEY_A4) {
+    return { { .key = key, .startFrame = 0, .endFrame = UINT32_MAX } };
+  }
+
+  clap_event_note_t makeNote(uint16_t type, int16_t key, double velocity = 1.0, int32_t noteId = -1) {
+    clap_event_note_t event{};
+    event.header.size = sizeof(clap_event_note_t);
+    event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    event.header.type = type;
+    event.note_id = noteId;
+    event.key = key;
+    event.velocity = velocity;
+
+    return event;
+  }
+
+  clap_event_midi_t makeMidi(uint8_t status, uint8_t first, uint8_t second) {
+    clap_event_midi_t event{};
+    event.header.size = sizeof(clap_event_midi_t);
+    event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+    event.header.type = CLAP_EVENT_MIDI;
+    event.data[0] = status;
+    event.data[1] = first;
+    event.data[2] = second;
+
+    return event;
   }
 
   /**
@@ -176,6 +219,44 @@ namespace {
 
       return writer.text;
     }
+
+    void start() {
+      REQUIRE(this->plugin->activate(this->plugin, SAMPLE_RATE, 1, 8192));
+      REQUIRE(this->plugin->start_processing(this->plugin));
+    }
+
+    /**
+     * Обрабатывает блок с заданными событиями и возвращает левый канал
+     */
+    std::vector<float> process(uint32_t frames, std::vector<const clap_event_header_t*> events = {}) {
+      std::vector<float> left(frames);
+      std::vector<float> right(frames);
+      float* channels[2] = { left.data(), right.data() };
+
+      clap_audio_buffer_t output{};
+      output.data32 = channels;
+      output.channel_count = 2;
+
+      const clap_input_events_t inEvents = {
+        .ctx = &events,
+        .size = [](const clap_input_events_t* list) {
+          return (uint32_t)((std::vector<const clap_event_header_t*>*)list->ctx)->size();
+        },
+        .get = [](const clap_input_events_t* list, uint32_t index) {
+          return (*(std::vector<const clap_event_header_t*>*)list->ctx)[index];
+        },
+      };
+
+      clap_process_t process{};
+      process.frames_count = frames;
+      process.audio_outputs = &output;
+      process.audio_outputs_count = 1;
+      process.in_events = &inEvents;
+
+      REQUIRE(this->plugin->process(this->plugin, &process) != CLAP_PROCESS_ERROR);
+
+      return left;
+    }
   };
 }
 
@@ -230,15 +311,19 @@ TEST_CASE("Порты: один стерео-выход и один нотный
   clap_note_port_info_t noteInfo{};
   CHECK_FALSE(notePorts->get(plugin, 0, false, &noteInfo));
   CHECK_FALSE(notePorts->get(plugin, 1, true, &noteInfo));
-  CHECK(notePorts->get(plugin, 0, true, &noteInfo));
+  REQUIRE(notePorts->get(plugin, 0, true, &noteInfo));
+
+  // Объявлены только те диалекты, которые плагин действительно обрабатывает
+  CHECK(noteInfo.supported_dialects == (CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI));
+  CHECK(noteInfo.preferred_dialect == CLAP_NOTE_DIALECT_CLAP);
 
   plugin->destroy(plugin);
 }
 
-TEST_CASE("Нота звучит с точностью до сэмпла и затихает после релиза") {
+TEST_CASE("Нота звучит с точностью до сэмпла и затихает после отпускания (D-043)") {
   const uint32_t startFrame = 1000;
   const uint32_t endFrame = 24000;
-  const uint32_t silenceFrame = endFrame + RELEASE_FRAMES + 10;
+  const uint32_t silenceFrame = endFrame + FADE_FRAMES + CHUNK_FRAMES;
 
   const StereoBuffer audio = renderOffline(
     { { .key = 60, .startFrame = startFrame, .endFrame = endFrame } },
@@ -252,7 +337,7 @@ TEST_CASE("Нота звучит с точностью до сэмпла и за
   CHECK(audio.left[startFrame + 1] != 0.0f);
   CHECK(peak(audio.left, startFrame, endFrame) > 0.01f);
   CHECK(peak(audio.left, startFrame, endFrame) < 1.0f);
-  CHECK(peak(audio.left, endFrame, endFrame + RELEASE_FRAMES) > 0.0f);
+  CHECK(peak(audio.left, endFrame, endFrame + FADE_FRAMES) > 0.0f);
   CHECK(isSilent(audio.left, silenceFrame, (uint32_t)audio.left.size()));
   CHECK(audio.left == audio.right);
 }
@@ -276,72 +361,239 @@ TEST_CASE("Рендер одинаков при повторе и при люб�
 }
 
 TEST_CASE("Загруженный граф звучит через CLAP (D-032)") {
-  const StereoBuffer audio = renderOffline({}, {
+  const StereoBuffer audio = renderOffline(heldNote(), {
     .frameCount = SAMPLE_RATE,
     .sampleRate = SAMPLE_RATE,
-    .preset = buildPreset(1000.0f),
+    .preset = buildPreset(),
   });
 
   REQUIRE(audio.left.size() == SAMPLE_RATE);
 
-  CHECK(std::abs(countRisingCrossings(audio.left) - 1000) <= 1);
+  CHECK(std::abs(countRisingCrossings(audio.left) - 440) <= 1);
   CHECK(peak(audio.left, 0, SAMPLE_RATE) > 0.3f);
   CHECK(audio.left == audio.right);
 }
 
+TEST_CASE("Без нот граф молчит") {
+  const StereoBuffer audio = renderOffline({}, { .frameCount = 4800, .preset = buildPreset() });
+
+  REQUIRE(audio.left.size() == 4800);
+  CHECK(isSilent(audio.left, 0, 4800));
+}
+
 TEST_CASE("Отключённый модуль из пресета пропускает сигнал через CLAP (D-040)") {
-  const StereoBuffer filtered = renderOffline({}, {
+  // Высокая нота: фильтр с низким срезом подавляет её почти полностью
+  const int16_t key = 111;
+
+  const StereoBuffer filtered = renderOffline(heldNote(key), {
     .frameCount = 4800,
     .sampleRate = SAMPLE_RATE,
-    .preset = buildPreset(5000.0f, 20.0f),
+    .preset = buildPreset(20.0f),
   });
-  const StereoBuffer bypassed = renderOffline({}, {
+  const StereoBuffer bypassed = renderOffline(heldNote(key), {
     .frameCount = 4800,
     .sampleRate = SAMPLE_RATE,
-    .preset = buildPreset(5000.0f, 20.0f, false),
+    .preset = buildPreset(20.0f, false),
   });
 
   CHECK(peak(filtered.left, 0, 4800) < 0.05f);
   CHECK(peak(bypassed.left, 0, 4800) > 0.3f);
 }
 
-TEST_CASE("Частота дискретизации хоста доходит до модулей графа") {
+TEST_CASE("Частота дискретизации хоста доходит до модулей подграфа") {
   const uint32_t sampleRate = 96000;
 
-  const StereoBuffer audio = renderOffline({}, {
+  const StereoBuffer audio = renderOffline(heldNote(), {
     .frameCount = sampleRate,
     .sampleRate = sampleRate,
-    .preset = buildPreset(1000.0f),
+    .preset = buildPreset(),
   });
 
   REQUIRE(audio.left.size() == sampleRate);
 
-  CHECK(std::abs(countRisingCrossings(audio.left) - 1000) <= 1);
+  CHECK(std::abs(countRisingCrossings(audio.left) - 440) <= 1);
 }
 
 TEST_CASE("Звук графа через CLAP не зависит от размера блока") {
-  const std::string preset = buildPreset(1234.0f);
+  const std::string preset = buildPreset();
+  const std::vector<OfflineNote> notes = {
+    { .key = 60, .startFrame = 100, .endFrame = 5000 },
+    { .key = 64, .startFrame = 2003, .endFrame = 7001 },
+  };
   const uint32_t frameCount = 9000;
 
-  const StereoBuffer reference = renderOffline({}, { .frameCount = frameCount, .blockSize = 256, .preset = preset });
+  const StereoBuffer reference = renderOffline(notes, { .frameCount = frameCount, .blockSize = 256, .preset = preset });
   REQUIRE(reference.left.size() == frameCount);
 
   for (const uint32_t blockSize : { 1u, 37u, 1024u }) {
     CAPTURE(blockSize);
-    CHECK(renderOffline({}, { .frameCount = frameCount, .blockSize = blockSize, .preset = preset }).left == reference.left);
+    CHECK(renderOffline(notes, { .frameCount = frameCount, .blockSize = blockSize, .preset = preset }).left == reference.left);
   }
 }
 
-TEST_CASE("Без загруженного графа плагин играет ноты по-старому") {
-  // Стартовое состояние совпадает с пустой моделью, поэтому движок не переключается
-  PluginFixture fixture;
-  const std::string initial = fixture.save();
-
-  const OfflineRenderSettings settings = { .frameCount = 4800, .preset = initial };
-  const StereoBuffer audio = renderOffline({ { .key = 60, .startFrame = 0, .endFrame = 4800 } }, settings);
+TEST_CASE("Плагин сразу играет из пресета по умолчанию (ТЗ §9.1)") {
+  const StereoBuffer audio = renderOffline(
+    { { .key = 60, .startFrame = 0, .endFrame = 4800 } },
+    { .frameCount = 4800 }
+  );
 
   REQUIRE(audio.left.size() == 4800);
   CHECK(peak(audio.left, 0, 4800) > 0.01f);
+
+  // Сохранённый проект с настройками по умолчанию открывается и звучит так же
+  PluginFixture fixture;
+  const std::string initial = fixture.save();
+
+  CHECK(renderOffline(
+    { { .key = 60, .startFrame = 0, .endFrame = 4800 } },
+    { .frameCount = 4800, .preset = initial }
+  ).left == audio.left);
+}
+
+TEST_CASE("Повторная активация начинается без голосов прошлого запуска") {
+  PluginFixture fixture;
+
+  REQUIRE(fixture.load(buildPreset()));
+  fixture.start();
+
+  const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+
+  fixture.process(100, { &on.header });
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
+  fixture.start();
+
+  CHECK(isSilent(fixture.process(1000), 0, 1000));
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
+}
+
+TEST_CASE("Ноты в виде сырого MIDI") {
+  PluginFixture fixture;
+
+  REQUIRE(fixture.load(buildPreset()));
+  fixture.start();
+
+  SUBCASE("Note on запускает голос, note off его отпускает") {
+    const clap_event_midi_t on = makeMidi(0x90, KEY_A4, 127);
+    const clap_event_midi_t off = makeMidi(0x80, KEY_A4, 0);
+
+    CHECK(peak(fixture.process(4800, { &on.header }), 0, 4800) > 0.3f);
+
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Note on с нулевой velocity в MIDI 1 означает отпускание") {
+    const clap_event_midi_t on = makeMidi(0x90, KEY_A4, 127);
+    const clap_event_midi_t off = makeMidi(0x90, KEY_A4, 0);
+
+    fixture.process(100, { &on.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &off.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
+}
+
+TEST_CASE("Pitch bend приходит через MIDI и сдвигает высоту на диапазон генератора (D-027)") {
+  PluginFixture fixture;
+
+  REQUIRE(fixture.load(buildPreset()));
+  fixture.start();
+
+  uint8_t lsb = 0;
+  uint8_t msb = 0;
+  int expected = 0;
+
+  SUBCASE("Центр") {
+    lsb = 0x00;
+    msb = 0x40;
+    expected = 440;
+  }
+
+  SUBCASE("Минимум: два полутона вниз") {
+    lsb = 0x00;
+    msb = 0x00;
+    expected = 392;
+  }
+
+  SUBCASE("Максимум: почти два полутона вверх") {
+    lsb = 0x7F;
+    msb = 0x7F;
+    expected = 494;
+  }
+
+  const clap_event_midi_t bend = makeMidi(0xE0, lsb, msb);
+  const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+
+  const std::vector<float> audio = fixture.process(SAMPLE_RATE, { &bend.header, &on.header });
+
+  CHECK(std::abs(countRisingCrossings(audio) - expected) <= 1);
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
+}
+
+TEST_CASE("События нот CLAP") {
+  PluginFixture fixture;
+
+  REQUIRE(fixture.load(buildPreset()));
+  fixture.start();
+
+  SUBCASE("Note on с нулевой velocity — обычная нота, а не отпускание") {
+    const clap_event_note_t first = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+    const clap_event_note_t second = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4, 0.0);
+
+    fixture.process(100, { &first.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &second.header });
+
+    CHECK(peak(fixture.process(1000), 0, 1000) > 0.3f);
+  }
+
+  SUBCASE("Note on без клавиши игнорируется") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, -1);
+
+    CHECK(isSilent(fixture.process(1000, { &on.header }), 0, 1000));
+  }
+
+  SUBCASE("Choke быстро глушит ноту") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+    const clap_event_note_t choke = makeNote(CLAP_EVENT_NOTE_CHOKE, KEY_A4);
+
+    fixture.process(100, { &on.header });
+    fixture.process(FADE_FRAMES + CHUNK_FRAMES, { &choke.header });
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Reset сразу освобождает все голоса") {
+    const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+
+    fixture.process(100, { &on.header });
+    fixture.plugin->reset(fixture.plugin);
+
+    CHECK(isSilent(fixture.process(1000), 0, 1000));
+  }
+
+  SUBCASE("Событие в середине блока начинает ноту в свой сэмпл") {
+    clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+    on.header.time = 500;
+
+    const std::vector<float> audio = fixture.process(1000, { &on.header });
+
+    // Синус начинается с нуля, первый ненулевой сэмпл — следующий после события
+    CHECK(isSilent(audio, 0, 501));
+    CHECK(audio[501] != 0.0f);
+  }
+
+  fixture.plugin->stop_processing(fixture.plugin);
+  fixture.plugin->deactivate(fixture.plugin);
 }
 
 TEST_CASE("Плагин отвергает неверный пресет и остаётся в прежнем состоянии") {
@@ -357,7 +609,7 @@ TEST_CASE("Плагин отвергает неверный пресет и ос
 }
 
 TEST_CASE("Состояние сохраняется и восстанавливается через потоки CLAP") {
-  const std::string preset = buildPreset(440.0f);
+  const std::string preset = buildPreset();
 
   PluginFixture source;
 
@@ -377,7 +629,7 @@ TEST_CASE("Состояние сохраняется и восстанавлив
 TEST_CASE("Ошибка потока отклоняет сохранение и загрузку") {
   PluginFixture fixture;
 
-  ChunkedReader reader = { .text = buildPreset(440.0f), .chunkSize = 4096, .shouldFail = true };
+  ChunkedReader reader = { .text = buildPreset(), .chunkSize = 4096, .shouldFail = true };
   CHECK_FALSE(fixture.state->load(fixture.plugin, &reader.stream));
 
   ChunkedWriter writer = { .chunkSize = 4096, .shouldFail = true };
@@ -386,19 +638,19 @@ TEST_CASE("Ошибка потока отклоняет сохранение и 
 
 TEST_CASE("Работающий плагин не принимает новый граф, но принимает своё же состояние") {
   PluginFixture fixture;
-  const std::string preset = buildPreset(440.0f);
+  const std::string preset = buildPreset(1000.0f);
 
   REQUIRE(fixture.load(preset));
   REQUIRE(fixture.plugin->activate(fixture.plugin, SAMPLE_RATE, 1, 256));
 
   CHECK(fixture.load(preset));
-  CHECK_FALSE(fixture.load(buildPreset(880.0f)));
+  CHECK_FALSE(fixture.load(buildPreset(2000.0f)));
   CHECK(fixture.save() == preset);
 
   fixture.plugin->deactivate(fixture.plugin);
 
-  CHECK(fixture.load(buildPreset(880.0f)));
-  CHECK(fixture.save() == buildPreset(880.0f));
+  CHECK(fixture.load(buildPreset(2000.0f)));
+  CHECK(fixture.save() == buildPreset(2000.0f));
 }
 
 TEST_CASE("Пример пресета из examples/ загружается и звучит") {
@@ -408,7 +660,7 @@ TEST_CASE("Пример пресета из examples/ загружается и 
   REQUIRE(file.good());
   content << file.rdbuf();
 
-  const StereoBuffer audio = renderOffline({}, { .frameCount = 4800, .preset = content.str() });
+  const StereoBuffer audio = renderOffline(heldNote(45), { .frameCount = 4800, .preset = content.str() });
 
   REQUIRE(audio.left.size() == 4800);
   CHECK(peak(audio.left, 0, 4800) > 0.01f);

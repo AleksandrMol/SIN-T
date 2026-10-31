@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "../clap/plugin.h"
+#include "../engine/defaultPreset/defaultPreset.h"
 #include "../engine/moduleCatalog/moduleCatalog.h"
 #include "./plugin.h"
 
@@ -14,7 +15,14 @@ bool my_plugin_init(const struct clap_plugin *plugin) {
     return false;
   }
 
-  instance->model.emplace(&instance->registry);
+  auto model = createDefaultModel(&instance->registry);
+
+  if (!model) {
+    return false;
+  }
+
+  instance->model = std::move(*model);
+  instance->engine.applyModel(*instance->model);
 
   return true;
 }
@@ -37,8 +45,8 @@ bool my_plugin_activate(
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
 
   instance->sample_rate = (float)sample_rate; // Сохраняем частоту дискретизации
-  instance->gen.setSampleRate((float)sample_rate);
   instance->engine.prepare((float)sample_rate);
+  instance->engine.reset(); // Голоса и состояния прошлого запуска или прошлого пресета не должны звучать
   instance->isActive = true;
 
   return true;
@@ -50,7 +58,11 @@ void my_plugin_deactivate(const struct clap_plugin *plugin) {
   instance->isActive = false;
 }
 
-void my_plug_reset(const struct clap_plugin *plugin) {}
+void my_plug_reset(const struct clap_plugin *plugin) {
+  MyPluginInstance* instance = (MyPluginInstance*)plugin;
+
+  instance->engine.reset();
+}
 
 // Начинает или останавливает обработку звука (вызывается перед стартом воспроизведения)
 bool my_plugin_start_processing(const struct clap_plugin *plugin) {

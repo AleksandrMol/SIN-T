@@ -37,6 +37,11 @@ void FilterProcessor::prepare(float sampleRate) {
   this->right.setSampleRate(sampleRate);
 }
 
+void FilterProcessor::reset() {
+  this->left.reset();
+  this->right.reset();
+}
+
 void FilterProcessor::process(const ProcessChunk& chunk) {
   const ParameterRamp& cutoff = chunk.parameters[PARAM_CUTOFF];
   const AudioBuffer& input = *chunk.inputs[0];

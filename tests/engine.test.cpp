@@ -11,6 +11,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "../engine/amp/ampProcessor.h"
 #include "../engine/builtinModules/builtinModules.h"
 #include "../engine/engine/engine.h"
 #include "../engine/filter/filterProcessor.h"
@@ -35,9 +36,60 @@ namespace {
     public:
       void prepare(float) override {}
 
+      void reset() override {}
+
       void process(const ProcessChunk& chunk) override {
         s_chunkSizes.push_back(chunk.frames);
       }
+  };
+
+  /**
+   * Источник с заданной частотой: настоящий осциллятор берёт высоту из ноты,
+   * а тестам главного графа нужен сигнал без генератора и голосов
+   */
+  class ToneProcessor : public ModuleProcessor {
+    public:
+      void prepare(float sampleRate) override {
+        this->oscillator.setSampleRate(sampleRate);
+      }
+
+      void reset() override {
+        this->oscillator.stopWave();
+      }
+
+      void process(const ProcessChunk& chunk) override {
+        AudioBuffer& output = *chunk.outputs[0];
+
+        this->oscillator.setWave((WAVE_TYPE)chunk.parameters[0].end);
+
+        for (uint32_t frame = 0; frame < chunk.frames; frame++) {
+          this->oscillator.setFreq(chunk.parameters[1].at(frame, chunk.frames));
+          this->oscillator.setVolume(chunk.parameters[2].at(frame, chunk.frames));
+          this->oscillator.doSample();
+
+          output.left[frame] = this->oscillator.currentSample;
+          output.right[frame] = this->oscillator.currentSample;
+        }
+      }
+
+    private:
+      Oscillator oscillator;
+  };
+
+  std::unique_ptr<ModuleProcessor> createToneProcessor() {
+    return std::make_unique<ToneProcessor>();
+  }
+
+  const ModuleDescriptor TEST_TONE = {
+    .type = "test.tone",
+    .name = "Test tone",
+    .outputs = { { "out", "Out" } },
+    .parameters = {
+      { .key = "wave", .name = "Wave", .minValue = 1.0f, .maxValue = 4.0f, .defaultValue = 3.0f, .isStepped = true },
+      { .key = "frequency", .name = "Frequency", .minValue = 20.0f, .maxValue = 20000.0f, .defaultValue = 440.0f },
+      { .key = "level", .name = "Level", .minValue = 0.0f, .maxValue = 1.0f, .defaultValue = 0.1f },
+    },
+    .createProcessor = createToneProcessor,
   };
 
   std::unique_ptr<ModuleProcessor> createRecordingProcessor() {
@@ -62,6 +114,7 @@ namespace {
     EngineFixture() {
       REQUIRE(addAllModules(this->registry).has_value());
       REQUIRE(this->registry.add(&TEST_RECORDER).has_value());
+      REQUIRE(this->registry.add(&TEST_TONE).has_value());
 
       this->model = std::make_unique<SynthModel>(&this->registry);
       this->engine.prepare(SAMPLE_RATE);
@@ -76,7 +129,7 @@ namespace {
     }
 
     ModuleId addOscillator(float frequency = 440.0f, float level = 0.1f) {
-      const ModuleId id = this->add("oscillator");
+      const ModuleId id = this->add("test.tone");
 
       this->set(id, "frequency", frequency);
       this->set(id, "level", level);
@@ -411,7 +464,7 @@ TEST_CASE_FIXTURE(EngineFixture, "Включённый снова модуль �
   CHECK(parts == whole);
 }
 
-TEST_CASE_FIXTURE(EngineFixture, "Генератор до появления голосов молчит и не мешает графу") {
+TEST_CASE_FIXTURE(EngineFixture, "Генератор без нот молчит и не мешает графу") {
   const ModuleId generator = this->add("generator");
   const ModuleId osc = this->addOscillator(1000.0f, 0.5f);
 
@@ -565,6 +618,25 @@ TEST_CASE_FIXTURE(EngineFixture, "Состояния удалённых моду
   CHECK(slots.at(filter).processor.get() == kept);
 }
 
+TEST_CASE_FIXTURE(EngineFixture, "Модуль другого типа с тем же ID получает своё состояние") {
+  const ModuleId filter = this->add("filter");
+
+  this->connectToOutput(filter);
+  this->render(100);
+
+  // Другая модель: под тем же ID теперь источник сигнала, а не фильтр
+  SynthModel other(&this->registry);
+  const ModuleId tone = **other.apply(AddModule{ "test.tone" });
+
+  REQUIRE(tone == filter);
+  REQUIRE(other.apply(SetParameter{ tone, "level", 0.5f }).has_value());
+  REQUIRE(other.apply(Connect{ { tone, "out", other.getOutputId(), "in" } }).has_value());
+
+  this->engine.applyModel(other);
+
+  CHECK(peak(this->renderBlocks(1000)) > 0.1f);
+}
+
 TEST_CASE_FIXTURE(EngineFixture, "Обработка звука не выделяет память (D-023)") {
   const ModuleId osc1 = this->addOscillator(300.0f, 0.2f);
   const ModuleId osc2 = this->addOscillator(700.0f, 0.3f);
@@ -593,7 +665,7 @@ TEST_CASE("Все модули каталога корректны и созда
 
   REQUIRE(addAllModules(registry).has_value());
 
-  for (const ModuleDescriptor* descriptor : { &OSCILLATOR_DESCRIPTOR, &FILTER_DESCRIPTOR }) {
+  for (const ModuleDescriptor* descriptor : { &OSCILLATOR_DESCRIPTOR, &FILTER_DESCRIPTOR, &AMP_DESCRIPTOR }) {
     CAPTURE(descriptor->type);
     REQUIRE(registry.find(descriptor->type) == descriptor);
     REQUIRE(descriptor->createProcessor != nullptr);

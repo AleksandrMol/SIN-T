@@ -10,6 +10,7 @@
 class StubProcessor : public ModuleProcessor {
   public:
     void prepare(float sampleRate) override;
+    void reset() override;
     void process(const ProcessChunk& chunk) override;
 };
 

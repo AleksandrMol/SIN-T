@@ -14,6 +14,14 @@ void Filter::setSampleRate(float sampleRate) {
   this->calculateAlpha();
 };
 
+/**
+ * Очищает историю фильтра
+ */
+void Filter::reset() {
+  this->previousOut = 0.0f;
+  this->currentOut = 0.0f;
+}
+
 void Filter::setCutoff(uint32_t cutoff) {
   this->cutoff = cutoff;
   this->calculateAlpha();

@@ -5,6 +5,7 @@ class Filter {
   public:
     Filter();
     void setSampleRate(float sampleRate);
+    void reset();
     float calculateOut(float in);
 
     /**

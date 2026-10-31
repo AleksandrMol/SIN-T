@@ -55,7 +55,7 @@ bool my_plug_note_ports_get(
   info->id = 0;
   snprintf(info->name, sizeof(info->name), "%s", "My Port Name");
   info->supported_dialects =
-    CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI_MPE | CLAP_NOTE_DIALECT_MIDI2;
+    CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
   info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
   return true;
 }
@@ -140,7 +140,6 @@ bool my_plug_state_load(const clap_plugin_t *plugin, const clap_istream_t *strea
 
   instance->model = std::move(*loaded);
   instance->engine.applyModel(*instance->model);
-  instance->useGraph = true;
 
   return true;
 }

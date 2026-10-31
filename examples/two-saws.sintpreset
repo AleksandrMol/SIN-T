@@ -1,31 +1,37 @@
 {
   "version": 1,
-  "nextModuleId": 5,
+  "nextModuleId": 7,
   "modules": [
     { "id": 1, "type": "output", "typeVersion": 1 },
-    {
-      "id": 2,
-      "type": "oscillator",
-      "typeVersion": 1,
-      "parameters": { "wave": 3, "frequency": 110, "level": 0.3 }
-    },
-    {
-      "id": 3,
-      "type": "oscillator",
-      "typeVersion": 1,
-      "parameters": { "wave": 3, "frequency": 110.7, "level": 0.3 }
-    },
+    { "id": 2, "type": "generator", "typeVersion": 1 },
+    { "id": 3, "type": "voiceOutput", "typeVersion": 1, "owner": 2 },
     {
       "id": 4,
+      "type": "oscillator",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "wave": 3, "fine": -6, "level": 0.2 }
+    },
+    {
+      "id": 5,
+      "type": "oscillator",
+      "typeVersion": 1,
+      "owner": 2,
+      "parameters": { "wave": 3, "fine": 6, "level": 0.2 }
+    },
+    {
+      "id": 6,
       "type": "filter",
       "typeVersion": 1,
-      "parameters": { "cutoff": 900 }
+      "owner": 2,
+      "parameters": { "cutoff": 1500 }
     }
   ],
   "connections": [
-    { "fromModule": 2, "fromPort": "out", "toModule": 4, "toPort": "in" },
-    { "fromModule": 3, "fromPort": "out", "toModule": 4, "toPort": "in" },
-    { "fromModule": 4, "fromPort": "out", "toModule": 1, "toPort": "in" }
+    { "fromModule": 4, "fromPort": "out", "toModule": 6, "toPort": "in" },
+    { "fromModule": 5, "fromPort": "out", "toModule": 6, "toPort": "in" },
+    { "fromModule": 6, "fromPort": "out", "toModule": 3, "toPort": "in" },
+    { "fromModule": 2, "fromPort": "out", "toModule": 1, "toPort": "in" }
   ],
   "routes": []
 }
