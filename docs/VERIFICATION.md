@@ -1,0 +1,64 @@
+# Как проверять SIN-T
+
+Рецепты для этой машины: Fedora 44, сессия Wayland, Reaper во flatpak. Что запускать для какой правки, написано в `CLAUDE.md`.
+
+## Окно редактора без DAW
+
+`Xvfb` и `xdotool` не установлены, поэтому окно проверяется на настоящем дисплее.
+
+```sh
+./build/sint_editor_preview out.ppm [--open] [--preset файл] [--scale 1.5] [--resize 1000x640] [--hold 5]
+python3 -I tools/editorPreview/ppmToPng.py out.ppm out.png
+```
+
+`--open` показывает подграф первого генератора, `--hold` держит окно открытым для событий снаружи. Инструмент печатает, сколько кадров нарисовано за 0,5 с простоя: должно быть 0.
+
+События мыши отправляются через `XSendEvent` в дочернее окно с классом `SintEditor`, pugl такие события принимает. Пример есть в `prototypes/gui-rmlui/test_host.cpp`. Этот хост открывает и закрывает окна любого `.clap` и показывает расход памяти:
+
+```sh
+cmake -S prototypes/gui-rmlui -B build-proto -G Ninja
+cmake --build build-proto
+./build-proto/test_host build/sint.clap <папка для кадров> [число переоткрытий]
+```
+
+## Reaper
+
+Reaper установлен через flatpak (`fm.reaper.Reaper`), видит домашнюю папку, работает через X11. `/tmp` у него свой, поэтому файлы для проверки класть в домашнюю папку.
+
+- Открытый Reaper принадлежит пользователю: перед запуском проверить `flatpak ps`, закрывать его и слать ему команды нельзя. `cmake --install` при открытом Reaper безопасен: файл заменяется новым, загруженная копия работает дальше и в `/proc/<pid>/maps` видна как `(deleted)`.
+- Зависимости в среде Reaper после каждой установки: `flatpak run --command=sh fm.reaper.Reaper -c 'ldd ~/.clap/sint.clap | grep "not found"'`. Вывода быть не должно.
+- Запуск дописывает данные в `reaper.ini` (`~/.var/app/fm.reaper.Reaper/config/REAPER/`), файл нужно сохранить заранее и вернуть. Окно закрывается через `flatpak kill fm.reaper.Reaper`.
+- Скрипт с живым плагином: `flatpak run fm.reaper.Reaper -nosplash -new <скрипт.lua>`. Плагин добавляется через `TrackFX_AddByName(track, "SIN-T", false, -1)`, окно открывается `TrackFX_Show(track, fx, 3)`. Запись движения ручки видна по `GetLastTouchedFX`, `CountTrackEnvelopes` и `<PARMENV` в `GetTrackStateChunk` при режиме автоматизации touch.
+- Живой звук: нота идёт через `reaper.StuffMIDIMessage` на виртуальную клавиатуру (перед нотой дождаться ~1 с после включения записи на дорожке), уровень читается через `reaper.Track_GetPeakInfo`. Клик по пианоролу так не проверить.
+- Рендер: `flatpak run fm.reaper.Reaper -renderproject <проект.RPP>`, в проекте заполнить `RENDER_FILE` и `RENDER_FMT`. Подготовить можно скриптом: `GetSetProjectInfo_String` с `RENDER_FILE`, `RENDER_PATTERN`, `RENDER_FORMAT` (`ZXZhdxgAAQ==` — WAV 24 бита) и `GetSetProjectInfo` с `RENDER_BOUNDSFLAG` = 1. Модуль `wave` такой WAV читает.
+- Состояние: у CLAP-плагинов в Reaper нет `vst_chunk`, `TrackFX_Get/SetNamedConfigParm` возвращают `false`. Состояние меняется через `SetTrackStateChunk`, блок `<STATE` — base64 от JSON состояния. Проект с другим пресетом собирается подстановкой этого блока. В блоке проекта у плагина с `clap.state` нет строк `P`, значения хранит только наше состояние.
+- Огибающая параметра хранится как `<PARMENV <слот>:<слот> ...>`. `GetFXEnvelope` не видит и не создаёт огибающие скрытых параметров.
+- В списке Reaper 1035 параметров: наши 1032 плюс Bypass, Wet, Delta.
+
+`sint_render` пишет WAV с плавающей точкой (формат 3). Модуль `wave` в Python такой файл не читает, данные разбирать вручную через `struct` и `array`.
+
+## Санитайзеры
+
+```sh
+cmake -S . -B build-tsan -G Ninja -DSINT_SANITIZER=thread "-DCMAKE_EXE_LINKER_FLAGS=-L<папка> -Wl,-rpath,<папка>"
+cmake --build build-tsan --target sint_tests
+```
+
+То же для `address`. Сборки с санитайзером идут без редактора.
+
+`libasan` и `libtsan` не установлены, `dnf` падает на прокси. Обе библиотеки берутся без `sudo`: скачать RPM через `curl` с `dl.fedoraproject.org/pub/fedora/linux/updates/44/Everything/x86_64/Packages/l/` (версия как у `libgcc`), проверить `rpm -K`, распаковать `rpm2cpio | cpio` во временную папку, рядом сделать символические ссылки `libtsan.so` и `libasan.so`, потому что системные файлы с этими именами ссылаются на отсутствующие пути.
+
+Стресс-тест запускается не один раз (`-tc="*стресс-тест*"`). Зелёному прогону верить только после отрицательной проверки: намеренно внесённая в копию проекта гонка должна быть поймана. Короткая проба с настоящей гонкой уже молчала.
+
+## Мутации
+
+Нарочно ломать новый код по одному месту и смотреть, упадут ли тесты. Выжившую мутацию разобрать: дыра в тестах, лишний код или эквивалентная мутация.
+
+- Ломать только копию проекта в папке для временных файлов, с `-DFETCHCONTENT_BASE_DIR` на копию `build/_deps` и `-DFETCHCONTENT_FULLY_DISCONNECTED=ON`, чтобы не скачивать зависимости.
+- Если исходники копируются поверх готовой сборки, обновить их даты через `touch`, иначе `ninja` оставит объектные файлы прошлой мутации.
+- Перед мутациями убедиться, что база проходит: иначе результат ничего не значит.
+- Мутация, которая не собралась, ничего не проверила.
+
+## clap-validator
+
+Не установлен. Готовый архив есть в релизах `free-audio/clap-validator`, версия `0.4.1`, файл для `ubuntu-22.04`, контрольная сумма указана в API релизов. Значения параметров упавшего теста он пишет в `/run/user/1000/clap-validator/com.chillyswim.sin-t/`.
