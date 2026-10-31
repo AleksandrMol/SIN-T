@@ -40,6 +40,7 @@ struct MyPluginInstance {
 
   ModuleRegistry registry;
   std::optional<SynthModel> model;
+  std::optional<SynthModel> loadedModel; // Модель в момент загрузки: её значения хост видит как значения по умолчанию (D-061)
   SlotTable slots;
   SlotInbox slotInbox;
   std::string presetName; // Имя загруженного пресета, в состоянии проекта (D-020)

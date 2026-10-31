@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "../tools/scopedFlushToZero.h"
+
 bool checkAudioOutputs (const clap_process_t *process) {
   // 1. Проверяем, что вообще есть выходные аудио-шины
   if (process->audio_outputs_count < 1) {
@@ -31,6 +33,7 @@ clap_process_status my_plugin_process(
   const clap_process_t *process
 ) {
   MyPluginInstance* instance = (MyPluginInstance*)plugin;
+  const ScopedFlushToZero flushToZero;
 
   if(!checkAudioOutputs(process)) {
     return CLAP_PROCESS_CONTINUE;

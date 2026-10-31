@@ -79,11 +79,6 @@ class SlotTable {
      */
     std::vector<uint32_t> findReplaced(const SlotTable& previous) const;
 
-    /**
-     * Совпадает ли то, что показано хосту: имена, пути и видимость
-     */
-    bool hasSameInfo(const SlotTable& other) const;
-
     bool operator==(const SlotTable&) const = default;
 
   private:

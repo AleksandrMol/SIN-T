@@ -181,7 +181,3 @@ std::vector<uint32_t> SlotTable::findReplaced(const SlotTable& previous) const {
 
   return replaced;
 }
-
-bool SlotTable::hasSameInfo(const SlotTable& other) const {
-  return this->infos == other.infos;
-}

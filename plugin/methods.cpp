@@ -22,6 +22,7 @@ bool my_plugin_init(const struct clap_plugin *plugin) {
   }
 
   instance->model = std::move(*model);
+  instance->loadedModel = instance->model;
   instance->hostParams = (const clap_host_params_t*)instance->host->get_extension(instance->host, CLAP_EXT_PARAMS);
   instance->hostPresetLoad = (const clap_host_preset_load_t*)instance->host->get_extension(instance->host, CLAP_EXT_PRESET_LOAD);
 

@@ -455,6 +455,55 @@ TEST_CASE("Все слоты: постоянный ID, диапазон 0..1, а
   CHECK_FALSE(fixture.params->text_to_value(fixture.plugin, SLOT_COUNT, "0.5", &value));
 }
 
+TEST_CASE("Значение по умолчанию для хоста — то, с которым параметр загружен (D-061)") {
+  ParamsFixture fixture;
+
+  const auto checkDefaults = [&fixture] {
+    for (uint32_t slot = 0; slot < SLOT_COUNT; slot++) {
+      CAPTURE(slot);
+      CHECK(fixture.info(slot).default_value == fixture.value(slot));
+    }
+  };
+
+  // В пресете по умолчанию gain равен 0, а не значению из описания amp: громкость задаёт ENV
+  checkDefaults();
+  CHECK(fixture.info(fixture.findSlot("G1 Amp 1 Gain")).default_value == 0.0);
+
+  SUBCASE("Автоматизация значение по умолчанию не двигает") {
+    const clap_id cutoff = fixture.findSlot("G1 Filter 1 Cutoff");
+    const double before = fixture.info(cutoff).default_value;
+    const clap_event_param_value_t value = makeValue(cutoff, 0.25);
+
+    fixture.flush({ &value.header });
+
+    CHECK(fixture.value(cutoff) == doctest::Approx(0.25));
+    CHECK(fixture.info(cutoff).default_value == before);
+  }
+
+  SUBCASE("Новое состояние приносит свои значения") {
+    ParamsFixture other;
+    const clap_id cutoff = other.findSlot("G1 Filter 1 Cutoff");
+    const clap_event_param_value_t value = makeValue(cutoff, 0.25);
+
+    other.flush({ &value.header });
+
+    REQUIRE(fixture.load(other.save()));
+
+    checkDefaults();
+    CHECK(fixture.info(cutoff).default_value == doctest::Approx(0.25));
+  }
+
+  SUBCASE("Пресет из файла тоже") {
+    const std::string path = writeTemporary("sint-test-defaults.sintpreset", buildTwoOscillatorPreset());
+
+    REQUIRE(fixture.presets->from_location(fixture.plugin, CLAP_PRESET_DISCOVERY_LOCATION_FILE, path.c_str(), nullptr));
+
+    checkDefaults();
+
+    std::filesystem::remove(path);
+  }
+}
+
 TEST_CASE("Пресет по умолчанию: макросы и параметры модулей видны под понятными именами") {
   ParamsFixture fixture;
 
@@ -813,6 +862,47 @@ TEST_CASE("Макрос: значение хоста через матрицу �
   CHECK(restored.value(0) == 1.0);
 }
 
+TEST_CASE("Затихающий сигнал не даёт субнормальных чисел: они дороги для процессора (D-062)") {
+  ParamsFixture fixture;
+
+  fixture.start();
+
+  const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+  const clap_event_param_value_t silence = makeValue(fixture.findSlot("G1 Oscillator 1 Level"), 0.0);
+
+  fixture.process(4800, { &on.header });
+
+  // Нота звучит, вход фильтра затих: его состояние убывает по экспоненте. Субнормальным оно
+  // становится на короткое время сразу после конца сглаживания, поэтому важен каждый сэмпл
+  uint32_t subnormal = 0;
+  std::vector<const clap_event_header_t*> events = { &silence.header };
+
+  for (int block = 0; block < 100; block++) {
+    for (const float sample : fixture.process(512, events)) {
+      subnormal += std::fpclassify(sample) == FP_SUBNORMAL ? 1 : 0;
+    }
+
+    events.clear();
+  }
+
+  CHECK(subnormal == 0);
+}
+
+TEST_CASE("Режим обработки малых чисел после process возвращается как был: поток принадлежит хосту (D-062)") {
+  ParamsFixture fixture;
+
+  fixture.start();
+
+  // Единственный заметный снаружи признак режима: субнормальное число остаётся собой
+  volatile float tiny = std::numeric_limits<float>::min();
+
+  fixture.process(256);
+
+  const float half = tiny * 0.5f;
+
+  CHECK(std::fpclassify(half) == FP_SUBNORMAL);
+}
+
 TEST_CASE("Значение вне 0..1 ограничивается до модуляции: иначе база перекрыла бы маршрут (D-025)") {
   ModuleRegistry registry;
   REQUIRE(addAllModules(registry).has_value());
@@ -923,7 +1013,7 @@ TEST_CASE("Загрузка состояния сообщает хосту, чт
     CHECK(fixture.cleared.empty());
   }
 
-  SUBCASE("Те же слоты с другими значениями: только значения") {
+  SUBCASE("Те же слоты с другими значениями: сброса нет, но значения по умолчанию новые") {
     ParamsFixture other;
     const clap_event_param_value_t value = makeValue(other.findSlot("G1 Filter 1 Cutoff"), 0.5);
 
@@ -931,7 +1021,9 @@ TEST_CASE("Загрузка состояния сообщает хосту, чт
 
     REQUIRE(fixture.load(other.save()));
 
-    CHECK(fixture.rescans == std::vector<clap_param_rescan_flags>{ CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT });
+    CHECK(fixture.rescans == std::vector<clap_param_rescan_flags>{
+      CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO,
+    });
     CHECK(fixture.cleared.empty());
   }
 

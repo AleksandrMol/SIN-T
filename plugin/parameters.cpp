@@ -11,8 +11,8 @@
 // (D-056): сразу в звук, из аудиопотока, и с задержкой в модель, на главном потоке
 
 namespace {
-  float readModelValue(const MyPluginInstance *instance, const SlotInfo& info) {
-    return instance->model->findModule(info.target.module)->parameters.at(info.descriptor->key);
+  float readValue(const SynthModel& model, const SlotInfo& info) {
+    return model.findModule(info.target.module)->parameters.at(info.descriptor->key);
   }
 
   uint32_t my_plug_params_count(const clap_plugin_t *plugin) {
@@ -35,7 +35,7 @@ namespace {
     info->max_value = 1.0;
 
     if (slot) {
-      info->default_value = toNormalized(*slot->descriptor, slot->descriptor->defaultValue);
+      info->default_value = toNormalized(*slot->descriptor, readValue(*instance->loadedModel, *slot));
       snprintf(info->name, sizeof(info->name), "%s", slot->name.c_str());
       snprintf(info->module, sizeof(info->module), "%s", slot->path.c_str());
     } else {
@@ -56,7 +56,7 @@ namespace {
 
     const SlotInfo* slot = instance->slots.find(param_id);
 
-    *out_value = slot ? toNormalized(*slot->descriptor, readModelValue(instance, *slot)) : 0.0;
+    *out_value = slot ? toNormalized(*slot->descriptor, readValue(*instance->model, *slot)) : 0.0;
 
     return true;
   }
@@ -213,6 +213,7 @@ void my_plug_replace_state(MyPluginInstance *instance, SessionState state) {
 
   // Модель меняется сразу: хост может тут же сохранить состояние, а звук догонит её сам (D-054)
   instance->model = std::move(state.model);
+  instance->loadedModel = instance->model;
   instance->engine.setSlotTargets(instance->slots.getTargets());
   instance->engine.replaceModel(*instance->model);
 
@@ -224,11 +225,6 @@ void my_plug_replace_state(MyPluginInstance *instance, SessionState state) {
     instance->hostParams->clear(instance->host, slot, CLAP_PARAM_CLEAR_ALL);
   }
 
-  clap_param_rescan_flags flags = CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT;
-
-  if (!instance->slots.hasSameInfo(previous)) {
-    flags |= CLAP_PARAM_RESCAN_INFO;
-  }
-
-  instance->hostParams->rescan(instance->host, flags);
+  // INFO нужен всегда: вместе с состоянием меняются значения по умолчанию
+  instance->hostParams->rescan(instance->host, CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO);
 }
