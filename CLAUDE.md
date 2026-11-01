@@ -50,7 +50,7 @@
 ## Сборка
 
 ```sh
-scripts/check.sh                                 # всё сразу, то же выполняет CI после каждого push (D-071)
+scripts/check.sh                                 # всё сразу, то же выполняет CI при push и PR в master (D-082)
 cmake -S . -B build -G Ninja                     # настройка, зависимости скачиваются один раз
 cmake --build build
 ctest --test-dir build --output-on-failure       # sint_tests, sint_gui_tests, версии библиотек
