@@ -26,6 +26,7 @@ struct KnobView {
 };
 
 struct RouteView {
+  Rml::Element* row;
   Rml::Element* fill;
   Rml::Element* value;
   RouteKey key;
@@ -52,12 +53,18 @@ class EditorScene final {
      */
     void refresh(const Rml::Element* heldBlock);
 
-    std::vector<KnobView>& getKnobs();
+    const std::vector<KnobView>& getKnobs() const;
     const std::vector<Rml::Element*>& getPorts() const;
     const std::vector<WireRef>& getWireRefs() const;
 
-    KnobView* findKnob(const Rml::Element* element);
-    KnobView* findKnobByCell(const Rml::Element* cell);
+    const KnobView* findKnob(const Rml::Element* element) const;
+    const KnobView* findKnob(const ModTarget& target) const;
+    const KnobView* findKnobByCell(const Rml::Element* cell) const;
+
+    /**
+     * Строка матрицы, в которой лежит элемент
+     */
+    const RouteView* findRoute(Rml::Element* element) const;
 
     void setBlockPosition(Rml::Element* block, ModulePosition position);
 
@@ -99,6 +106,5 @@ class EditorScene final {
     void buildMatrix();
 
     Rml::Element* findPort(ModuleId module, const std::string& port, bool isModulation, bool isInput) const;
-    Rml::Element* findKnobElement(ModuleId module, const std::string& parameter) const;
     bool hasOffCanvasRoute(const ModuleInstance& target, const ParameterDescriptor& parameter) const;
 };

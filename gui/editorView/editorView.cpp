@@ -123,9 +123,7 @@ void EditorView::rebuild() {
   // Перестройка уничтожает элементы: начатое действие продолжать не с чем
   if (this->drag.kind != DRAG_KIND::NONE && this->drag.kind != DRAG_KIND::CANVAS) {
     if (this->drag.kind == DRAG_KIND::KNOB) {
-      const KnobView& view = this->scene.getKnobs()[this->drag.index];
-
-      this->backend.endGesture(view.module, view.parameter->key);
+      this->backend.endGesture(this->drag.knob.module, this->drag.knob.parameter);
     }
 
     this->drag = {};
@@ -269,7 +267,7 @@ void EditorView::handleClick(Rml::Event& event) {
 void EditorView::handleDoubleClick(Rml::Event& event) {
   Rml::Element* target = event.GetTargetElement();
 
-  if (KnobView* view = this->scene.findKnob(target)) {
+  if (const KnobView* view = this->scene.findKnob(target)) {
     this->backend.beginGesture(view->module, view->parameter->key);
     this->report(this->backend.apply(SetParameter{ view->module, view->parameter->key, this->backend.getDefaultValue(view->module, *view->parameter) }));
     this->backend.endGesture(view->module, view->parameter->key);
@@ -292,7 +290,6 @@ void EditorView::handleDoubleClick(Rml::Event& event) {
 
 void EditorView::runAction(const std::string& action, Rml::Element* element) {
   const ModuleId module = readModule(element);
-  const size_t route = (size_t)element->GetAttribute<int>("data-route", 0);
   const Rml::Vector2f below = element->GetAbsoluteOffset(Rml::BoxArea::Border) + Rml::Vector2f(0.0f, element->GetBox().GetSize(Rml::BoxArea::Border).y + 2.0f);
 
   if (action == "toggle") {
@@ -310,10 +307,8 @@ void EditorView::runAction(const std::string& action, Rml::Element* element) {
   } else if (action == "remove-wire") {
     this->removeSelectedWire();
   } else if (action == "remove-route") {
-    const auto& list = this->backend.getModel().getRoutes();
-
-    if (route < list.size()) {
-      this->report(this->backend.apply(RemoveRoute{ list[route].source, list[route].target }));
+    if (const RouteView* view = this->scene.findRoute(element)) {
+      this->report(this->backend.apply(RemoveRoute{ view->key.first, view->key.second }));
     }
   } else if (action == "menu") {
     this->overlays.runMenuItem((size_t)element->GetAttribute<int>("data-item", 0));
@@ -354,18 +349,20 @@ void EditorView::handleDragStart(Rml::Event& event) {
     this->drag.kind = DRAG_KIND::BLOCK;
     this->drag.grabOffset = mouse - element->GetAbsoluteOffset(Rml::BoxArea::Border);
   } else if (kind == "knob") {
-    if (KnobView* view = this->scene.findKnob(element)) {
+    if (const KnobView* view = this->scene.findKnob(element)) {
       this->drag.kind = DRAG_KIND::KNOB;
-      this->drag.index = (size_t)(view - this->scene.getKnobs().data());
+      this->drag.knob = { view->module, view->parameter->key };
       this->drag.value = view->knob->getValue();
       this->backend.beginGesture(view->module, view->parameter->key);
     }
   } else if (kind == "wire") {
     this->startWireDrag(element);
   } else if (kind == "depth") {
-    this->drag.kind = DRAG_KIND::DEPTH;
-    this->drag.index = (size_t)element->GetAttribute<int>("data-route", 0);
-    this->setDepthFromMouse(mouse.x);
+    if (const RouteView* view = this->scene.findRoute(element)) {
+      this->drag.kind = DRAG_KIND::DEPTH;
+      this->drag.route = view->key;
+      this->setDepthFromMouse(mouse.x);
+    }
   }
 }
 
@@ -390,7 +387,10 @@ void EditorView::handleDrag(Rml::Event& event) {
     }
 
     case DRAG_KIND::KNOB:
-      this->changeKnob(this->scene.getKnobs()[this->drag.index], -delta.y / scale / KNOB_DRAG_RANGE, event.GetParameter("shift_key", 0) != 0);
+      if (const KnobView* view = this->scene.findKnob(this->drag.knob)) {
+        this->changeKnob(*view, -delta.y / scale / KNOB_DRAG_RANGE, event.GetParameter("shift_key", 0) != 0);
+      }
+
       break;
 
     case DRAG_KIND::WIRE:
@@ -421,12 +421,9 @@ void EditorView::handleDragEnd() {
       break;
     }
 
-    case DRAG_KIND::KNOB: {
-      const KnobView& view = this->scene.getKnobs()[this->drag.index];
-
-      this->backend.endGesture(view.module, view.parameter->key);
+    case DRAG_KIND::KNOB:
+      this->backend.endGesture(this->drag.knob.module, this->drag.knob.parameter);
       break;
-    }
 
     case DRAG_KIND::WIRE:
       this->clearLegalTargets();
@@ -444,7 +441,7 @@ void EditorView::handleScroll(Rml::Event& event) {
   Rml::Element* target = event.GetTargetElement();
   const float wheel = event.GetParameter("wheel_delta_y", 0.0f);
 
-  if (KnobView* view = this->scene.findKnob(target)) {
+  if (const KnobView* view = this->scene.findKnob(target)) {
     this->backend.beginGesture(view->module, view->parameter->key);
 
     // Колесо у ступенчатого параметра переключает ровно на одну ступень
@@ -645,7 +642,7 @@ void EditorView::setKnobValue(const KnobView& view, float position) {
   this->report(this->backend.apply(SetParameter{ view.module, view.parameter->key, toReal(*view.parameter, position) }));
 }
 
-void EditorView::changeKnob(KnobView& view, float delta, bool isFine) {
+void EditorView::changeKnob(const KnobView& view, float delta, bool isFine) {
   this->drag.value = std::clamp(this->drag.value + delta * (isFine ? FINE_FACTOR : 1.0f), 0.0f, 1.0f);
   this->setKnobValue(view, this->drag.value);
 }
@@ -670,17 +667,22 @@ void EditorView::promptKnobValue(const KnobView& view) {
 
 void EditorView::setDepthFromMouse(float mouseX) {
   const auto& list = this->backend.getModel().getRoutes();
+  const auto [source, target] = this->drag.route;
 
-  if (this->drag.index >= list.size()) {
+  // Маршрут могли удалить из хоста, а вид об этом ещё не знает
+  const bool isAlive = std::ranges::any_of(list, [&source, &target](const ModRoute& route) {
+    return route.source == source && route.target == target;
+  });
+
+  if (!isAlive) {
     return;
   }
 
   const float left = this->drag.element->GetAbsoluteOffset(Rml::BoxArea::Border).x;
   const float width = this->drag.element->GetBox().GetSize(Rml::BoxArea::Border).x;
   const float depth = std::clamp((mouseX - left) / width * 2.0f - 1.0f, -1.0f, 1.0f);
-  const ModRoute& route = list[this->drag.index];
 
-  this->report(this->backend.apply(SetRouteDepth{ route.source, route.target, depth }));
+  this->report(this->backend.apply(SetRouteDepth{ source, target, depth }));
 }
 
 // //////////

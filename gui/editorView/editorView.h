@@ -74,7 +74,8 @@ class EditorView final : public Rml::EventListener {
       Rml::Vector2f grabOffset{};
       Rml::Vector2f lastMouse{};
       float value = 0.0f; // Положение ручки: копится, чтобы тонкая настройка и ступени не терялись
-      size_t index = 0; // Ручка или маршрут
+      ModTarget knob{}; // Ссылки по ключу, а не номер в списке: номера меняются вместе со схемой
+      RouteKey route{};
       WireDrag wire{};
     };
 
@@ -131,7 +132,7 @@ class EditorView final : public Rml::EventListener {
     void removeSelectedWire();
 
     void setKnobValue(const KnobView& view, float position);
-    void changeKnob(KnobView& view, float delta, bool isFine);
+    void changeKnob(const KnobView& view, float delta, bool isFine);
     void promptKnobValue(const KnobView& view);
     void setDepthFromMouse(float mouseX);
 

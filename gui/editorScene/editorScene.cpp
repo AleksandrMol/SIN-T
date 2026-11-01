@@ -46,7 +46,7 @@ EditorScene::EditorScene(Rml::ElementDocument* document, EditorBackend& backend)
   this->wires = dynamic_cast<WireLayer*>(document->GetElementById("wires"));
 }
 
-std::vector<KnobView>& EditorScene::getKnobs() {
+const std::vector<KnobView>& EditorScene::getKnobs() const {
   return this->knobs;
 }
 
@@ -385,14 +385,12 @@ Rml::Element* EditorScene::findPort(ModuleId module, const std::string& port, bo
   return nullptr;
 }
 
-Rml::Element* EditorScene::findKnobElement(ModuleId module, const std::string& parameter) const {
-  for (const KnobView& view : this->knobs) {
-    if (view.module == module && view.parameter->key == parameter) {
-      return view.knob;
-    }
-  }
+const KnobView* EditorScene::findKnob(const ModTarget& target) const {
+  const auto view = std::ranges::find_if(this->knobs, [&target](const KnobView& candidate) {
+    return candidate.module == target.module && candidate.parameter->key == target.parameter;
+  });
 
-  return nullptr;
+  return view != this->knobs.end() ? &*view : nullptr;
 }
 
 void EditorScene::buildWires() {
@@ -413,11 +411,11 @@ void EditorScene::buildWires() {
 
   for (const ModRoute& route : model.getRoutes()) {
     Rml::Element* from = this->findPort(route.source.module, route.source.output, true, false);
-    Rml::Element* to = this->findKnobElement(route.target.module, route.target.parameter);
+    const KnobView* to = this->findKnob(route.target);
 
     // Источник из панели или с другого уровня на холсте не лежит: такой маршрут виден как метка на ручке (D-063)
     if (from && to && isOnGraph(*model.findModule(route.source.module), this->graph)) {
-      list.push_back({ from, to, WIRE_KIND::MODULATION });
+      list.push_back({ from, to->knob, WIRE_KIND::MODULATION });
       this->wireRefs.emplace_back(RouteKey{ route.source, route.target });
     }
   }
@@ -488,8 +486,7 @@ void EditorScene::buildMatrix() {
     return;
   }
 
-  for (size_t index = 0; index < list.size(); index++) {
-    const ModRoute& route = list[index];
+  for (const ModRoute& route : list) {
     Rml::Element* row = addElement(this->matrixRows, "div", "route");
 
     addElement(row, "div", "route-source", this->makeSourceLabel(route.source));
@@ -498,7 +495,6 @@ void EditorScene::buildMatrix() {
     Rml::Element* slider = addElement(row, "div", "route-depth");
 
     slider->SetAttribute("data-drag", "depth");
-    slider->SetAttribute("data-route", (int)index);
 
     Rml::Element* fill = addElement(slider, "div", "route-fill");
 
@@ -508,9 +504,8 @@ void EditorScene::buildMatrix() {
     Rml::Element* remove = addElement(row, "div", "block-button", "×");
 
     remove->SetAttribute("data-action", "remove-route");
-    remove->SetAttribute("data-route", (int)index);
 
-    this->routes.push_back({ fill, value, { route.source, route.target } });
+    this->routes.push_back({ row, fill, value, { route.source, route.target } });
   }
 }
 
@@ -519,7 +514,7 @@ void EditorScene::setBlockPosition(Rml::Element* block, ModulePosition position)
   block->SetProperty(Rml::PropertyId::Top, makeLength(position.y));
 }
 
-KnobView* EditorScene::findKnob(const Rml::Element* element) {
+const KnobView* EditorScene::findKnob(const Rml::Element* element) const {
   const auto view = std::ranges::find_if(this->knobs, [element](const KnobView& candidate) {
     return candidate.knob == element;
   });
@@ -527,10 +522,18 @@ KnobView* EditorScene::findKnob(const Rml::Element* element) {
   return view != this->knobs.end() ? &*view : nullptr;
 }
 
-KnobView* EditorScene::findKnobByCell(const Rml::Element* cell) {
+const KnobView* EditorScene::findKnobByCell(const Rml::Element* cell) const {
   const auto view = std::ranges::find_if(this->knobs, [cell](const KnobView& candidate) {
     return candidate.cell == cell;
   });
 
   return view != this->knobs.end() ? &*view : nullptr;
+}
+
+const RouteView* EditorScene::findRoute(Rml::Element* element) const {
+  const auto view = std::ranges::find_if(this->routes, [element](const RouteView& candidate) {
+    return candidate.row->Contains(element);
+  });
+
+  return view != this->routes.end() ? &*view : nullptr;
 }

@@ -363,6 +363,56 @@ TEST_CASE_FIXTURE(EditorFixture, "Выход и макросы нельзя уд
   CHECK(this->block(output)->QuerySelector("[data-action=\"toggle\"]") == nullptr);
 }
 
+TEST_CASE_FIXTURE(EditorFixture, "Меняется та ручка, которую взяли, а не первая в блоке") {
+  this->openGenerator();
+
+  const ModuleId env = this->findModule("env");
+  const auto& parameters = this->model().findModule(env)->descriptor->parameters;
+
+  REQUIRE(parameters.size() > 1);
+
+  const std::string first = parameters[0].key;
+  const std::string second = parameters[1].key;
+  const float firstBefore = this->value(env, first);
+  const float secondBefore = this->value(env, second);
+  const Rml::Vector2f start = this->center(this->knob(env, second));
+
+  this->moveMouse(start);
+  this->press();
+  this->moveMouse(start + Rml::Vector2f(0.0f, -30.0f));
+  this->release();
+
+  CHECK(this->value(env, first) == firstBefore);
+  CHECK(this->value(env, second) != secondBefore);
+}
+
+TEST_CASE_FIXTURE(EditorFixture, "Смена схемы во время движения ручки закрывает жест, отпускание второго конца не шлёт (D-067)") {
+  this->openGenerator();
+
+  const ModuleId filter = this->findModule("filter");
+  const clap_id slot = *this->instance->slots.findSlot(filter, "cutoff");
+  const Rml::Vector2f start = this->center(this->knob(filter, "cutoff"));
+
+  const auto countEnds = [this, slot] {
+    return std::ranges::count_if(this->drainHostEvents(), [slot](const SentEvent& event) {
+      return event.type == CLAP_EVENT_PARAM_GESTURE_END && event.slot == slot;
+    });
+  };
+
+  this->moveMouse(start);
+  this->press();
+  this->moveMouse(start + Rml::Vector2f(0.0f, -30.0f));
+  this->drainHostEvents();
+
+  this->apply(AddModule{ "lfo", this->view->getGraph() });
+
+  CHECK(countEnds() == 1);
+
+  this->release();
+
+  CHECK(countEnds() == 0);
+}
+
 TEST_CASE_FIXTURE(EditorFixture, "Движение ручки вверх увеличивает значение, хост получает начало, значения и конец (D-067)") {
   this->openGenerator();
 
@@ -938,6 +988,63 @@ TEST_CASE_FIXTURE(EditorFixture, "Глубина меняется ползунк
 
   CHECK(this->model().getRoutes().empty());
   CHECK(findRoute(this->model(), route.source.module, route.target.module, route.target.parameter) == nullptr);
+}
+
+TEST_CASE_FIXTURE(EditorFixture, "Ползунок и кнопка строки матрицы действуют на свой маршрут") {
+  const ModRoute first = this->model().getRoutes().front();
+  const std::string output = this->model().findModule(MACROS_MODULE_ID)->descriptor->modOutputs[2].key;
+
+  this->apply(AddRoute{ { { MACROS_MODULE_ID, output }, { this->findModule("filter"), "cutoff" }, 0.5f } });
+
+  Rml::ElementList sliders;
+
+  this->document->QuerySelectorAll(sliders, ".route-depth");
+  REQUIRE(sliders.size() == 2);
+
+  const float width = sliders[1]->GetBox().GetSize(Rml::BoxArea::Border).x;
+  const Rml::Vector2f left = sliders[1]->GetAbsoluteOffset(Rml::BoxArea::Border) + Rml::Vector2f(0.0f, 5.0f);
+
+  this->moveMouse(left + Rml::Vector2f(width * 0.5f, 0.0f));
+  this->press();
+  this->moveMouse(left + Rml::Vector2f(width * 0.25f, 0.0f));
+  this->release();
+
+  CHECK(this->model().getRoutes()[0].depth == first.depth);
+  CHECK(this->model().getRoutes()[1].depth == doctest::Approx(-0.5f).epsilon(0.03));
+
+  Rml::ElementList buttons;
+
+  this->document->QuerySelectorAll(buttons, "[data-action=\"remove-route\"]");
+  REQUIRE(buttons.size() == 2);
+  this->click(buttons[1]);
+
+  REQUIRE(this->model().getRoutes().size() == 1);
+  CHECK(this->model().getRoutes().front().source == first.source);
+  CHECK(this->model().getRoutes().front().target == first.target);
+}
+
+TEST_CASE_FIXTURE(EditorFixture, "Перетаскивание глубины не переходит на соседний маршрут, если свой уже удалён") {
+  const ModRoute first = this->model().getRoutes().front();
+  const std::string output = this->model().findModule(MACROS_MODULE_ID)->descriptor->modOutputs[2].key;
+
+  this->apply(AddRoute{ { { MACROS_MODULE_ID, output }, { this->findModule("filter"), "cutoff" }, 0.5f } });
+
+  Rml::Element* slider = this->get(".route-depth");
+  const float width = slider->GetBox().GetSize(Rml::BoxArea::Border).x;
+  const Rml::Vector2f left = slider->GetAbsoluteOffset(Rml::BoxArea::Border) + Rml::Vector2f(0.0f, 5.0f);
+
+  this->moveMouse(left + Rml::Vector2f(width * 0.5f, 0.0f));
+  this->press();
+  this->moveMouse(left + Rml::Vector2f(width * 0.4f, 0.0f));
+
+  // Правка из хоста пришла раньше кадра: вид ещё показывает удалённый маршрут
+  REQUIRE(my_plug_apply_command(this->instance, RemoveRoute{ first.source, first.target }).has_value());
+  this->moveMouse(left + Rml::Vector2f(width * 0.25f, 0.0f));
+  this->release();
+
+  REQUIRE(this->model().getRoutes().size() == 1);
+  CHECK(this->model().getRoutes().front().depth == 0.5f);
+  CHECK(this->view->getMessage().empty());
 }
 
 TEST_CASE_FIXTURE(EditorFixture, "Маршрут между уровнями добавляется из матрицы (ТЗ §6.2)") {
