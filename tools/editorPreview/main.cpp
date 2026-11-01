@@ -219,6 +219,10 @@ int main(int argc, char** argv) {
         }
       }
     });
+
+    measure("блок", [&](int index) {
+      (void)my_plug_apply_command(instance, SetModulePosition{ patch.lastBlock, { 40.0f + (float)index, 40.0f } });
+    });
   }
 
   pump(holdMilliseconds);

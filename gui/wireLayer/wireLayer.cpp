@@ -106,6 +106,31 @@ namespace {
 
     drawArrow(builder, curve, color, scale);
   }
+
+  /**
+   * Сетка провода, выходящего из нуля
+   */
+  Rml::Mesh makeShapeMesh(Rml::Vector2f end, WIRE_KIND kind, bool isSelected, float scale) {
+    MeshBuilder builder;
+
+    drawWire(builder, makeCurve({ 0.0f, 0.0f }, end), kind, isSelected, scale);
+
+    return builder.takeMesh();
+  }
+
+  void appendMesh(Rml::Mesh& target, const Rml::Mesh& part, Rml::Vector2f offset) {
+    const int first = (int)target.vertices.size();
+
+    target.vertices.insert(target.vertices.end(), part.vertices.begin(), part.vertices.end());
+
+    for (size_t index = (size_t)first; index < target.vertices.size(); index++) {
+      target.vertices[index].position += offset;
+    }
+
+    for (const int vertex : part.indices) {
+      target.indices.push_back(first + vertex);
+    }
+  }
 }
 
 void WireLayer::setWires(std::vector<Wire> wires) {
@@ -161,23 +186,127 @@ Rml::Vector2f WireLayer::findMiddle(size_t index) const {
   return { middle.x, middle.y };
 }
 
-void WireLayer::OnRender() {
-  if (!this->GetRenderManager() || (this->wires.empty() && !this->draftFrom)) {
-    return;
+const Rml::Mesh& WireLayer::getMesh() const {
+  static const Rml::Mesh EMPTY;
+
+  // Геометрии нет, пока слой не рисовался или рисовать нечего
+  return this->geometry ? this->geometry.GetMesh() : EMPTY;
+}
+
+Rml::Mesh WireLayer::buildMesh() const {
+  const float scale = this->getScale();
+  Rml::Mesh mesh;
+
+  for (const WireShape& shape : this->collectShapes()) {
+    appendMesh(mesh, makeShapeMesh(shape.end - shape.start, shape.kind, shape.isSelected, scale), shape.start);
   }
 
-  const float scale = this->GetContext()->GetDensityIndependentPixelRatio();
-  MeshBuilder builder;
+  return mesh;
+}
+
+uint64_t WireLayer::getShapedWireCount() const {
+  return this->shapedWireCount;
+}
+
+uint64_t WireLayer::getAssembledMeshCount() const {
+  return this->assembledMeshCount;
+}
+
+std::vector<WireLayer::WireShape> WireLayer::collectShapes() const {
+  std::vector<WireShape> shapes;
+
+  shapes.reserve(this->wires.size() + 1);
 
   for (const Wire& wire : this->wires) {
-    drawWire(builder, makeCurve(findCenter(wire.from), findEnd(wire.to)), wire.kind, wire.isSelected, scale);
+    shapes.push_back({ findCenter(wire.from), findEnd(wire.to), wire.kind, wire.isSelected });
   }
 
   if (this->draftFrom) {
-    drawWire(builder, makeCurve(findCenter(this->draftFrom), this->draftPoint), this->draftKind, false, scale);
+    shapes.push_back({ findCenter(this->draftFrom), this->draftPoint, this->draftKind, false });
   }
 
-  Rml::Geometry geometry = this->GetRenderManager()->MakeGeometry(builder.takeMesh());
+  return shapes;
+}
 
-  geometry.Render(Rml::Vector2f(0.0f, 0.0f));
+float WireLayer::getScale() const {
+  return this->GetContext()->GetDensityIndependentPixelRatio();
+}
+
+/**
+ * Как ключи в React: провода сравниваются с прошлым кадром, считаются только изменившиеся.
+ * Если ничего не сдвинулось, рисуется готовая геометрия и общая сетка не собирается
+ */
+void WireLayer::syncGeometry() {
+  const std::vector<WireShape> shapes = this->collectShapes();
+  const float scale = this->getScale();
+  bool isChanged = shapes.size() != this->shapedWires.size();
+
+  if (scale != this->shapedScale) {
+    this->shapedScale = scale;
+    this->shapedWires.clear();
+    isChanged = true;
+  }
+
+  this->shapedWires.resize(shapes.size());
+
+  for (size_t index = 0; index < shapes.size(); index++) {
+    const WireShape& shape = shapes[index];
+    ShapedWire& shaped = this->shapedWires[index];
+    const WireShape& known = shaped.shape;
+
+    // Пустая сетка у нового провода: совпасть с записью по умолчанию он может, а готового куска у него нет
+    if (shaped.mesh && shape == known) {
+      continue;
+    }
+
+    isChanged = true;
+
+    const bool isSameForm = shaped.mesh
+      && shape.end - shape.start == known.end - known.start
+      && shape.kind == known.kind
+      && shape.isSelected == known.isSelected;
+
+    if (!isSameForm) {
+      shaped.mesh = makeShapeMesh(shape.end - shape.start, shape.kind, shape.isSelected, scale);
+      this->shapedWireCount++;
+    }
+
+    shaped.shape = shape;
+  }
+
+  if (!isChanged) {
+    return;
+  }
+
+  size_t vertexCount = 0;
+  size_t indexCount = 0;
+
+  for (const ShapedWire& shaped : this->shapedWires) {
+    vertexCount += shaped.mesh.vertices.size();
+    indexCount += shaped.mesh.indices.size();
+  }
+
+  Rml::Mesh mesh;
+
+  mesh.vertices.reserve(vertexCount);
+  mesh.indices.reserve(indexCount);
+
+  for (const ShapedWire& shaped : this->shapedWires) {
+    appendMesh(mesh, shaped.mesh, shaped.shape.start);
+  }
+
+  this->geometry = this->GetRenderManager()->MakeGeometry(std::move(mesh));
+  this->assembledMeshCount++;
+}
+
+void WireLayer::OnRender() {
+  if (!this->GetRenderManager()) {
+    return;
+  }
+
+  this->syncGeometry();
+
+  if (!this->shapedWires.empty()) {
+    this->geometry.Render(Rml::Vector2f(0.0f, 0.0f));
+  }
 }

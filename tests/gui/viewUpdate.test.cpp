@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <map>
 #include <random>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <string>
@@ -402,6 +403,64 @@ namespace {
       other->Close();
       this->context->Update();
     }
+
+    WireLayer* wires() const {
+      return dynamic_cast<WireLayer*>(this->document->GetElementById("wires"));
+    }
+
+    WireLayer* draft() const {
+      return dynamic_cast<WireLayer*>(this->document->GetElementById("draft"));
+    }
+
+    void render() {
+      this->context->Update();
+      this->context->Render();
+    }
+
+    /**
+     * Точка в пикселях окна: от масштаба и раскладки она не зависит
+     */
+    Rml::Element* addPoint(int x, int y) {
+      Rml::Element* point = this->document->AppendChild(this->document->CreateElement("div"));
+
+      point->SetAttribute("style", "position: absolute; left: " + std::to_string(x) + "px; top: " + std::to_string(y) + "px; width: 0px; height: 0px;");
+
+      return point;
+    }
+
+    /**
+     * Нарисованная сетка совпадает с посчитанной с нуля: куски не устарели
+     */
+    void checkWireMesh() {
+      this->render();
+
+      CHECK(this->wires()->getMesh() == this->wires()->buildMesh());
+      CHECK(this->draft()->getMesh() == this->draft()->buildMesh());
+    }
+
+    void scrollCanvas(int direction) {
+      const Rml::Vector2f corner = this->get("#canvas")->GetAbsoluteOffset(Rml::BoxArea::Border) + Rml::Vector2f(5.0f, 5.0f);
+
+      this->context->ProcessMouseMove((int)corner.x, (int)corner.y, 0);
+      this->context->ProcessMouseWheel(Rml::Vector2f(0.0f, (float)direction), 0);
+      this->frame();
+    }
+
+    /**
+     * Сколько проводов пришлось посчитать и сколько раз собрать общую сетку за время правки
+     */
+    template <typename Action>
+    std::pair<uint64_t, uint64_t> countWork(Action action) {
+      this->render();
+
+      const uint64_t shaped = this->wires()->getShapedWireCount();
+      const uint64_t assembled = this->wires()->getAssembledMeshCount();
+
+      action();
+      this->render();
+
+      return { this->wires()->getShapedWireCount() - shaped, this->wires()->getAssembledMeshCount() - assembled };
+    }
   };
 }
 
@@ -464,4 +523,210 @@ TEST_CASE_FIXTURE(ViewUpdateFixture, "Вид совпадает с постро�
 
   this->dragTo(start, start + Rml::Vector2f(40.0f, 30.0f));
   this->checkMatchesFullBuild();
+}
+
+TEST_CASE("Нарисованная сетка проводов совпадает с посчитанной с нуля (D-090)") {
+  for (uint32_t seed = 1; seed <= 4; seed++) {
+    CAPTURE(seed);
+
+    ViewUpdateFixture fixture(seed);
+
+    for (int step = 0; step < STEPS_PER_SEED; step++) {
+      CAPTURE(step);
+
+      const auto& wires = fixture.wires()->getWires();
+      const size_t kind = fixture.pick(10);
+
+      if (kind == 0) {
+        fixture.scrollCanvas(fixture.pick(2) == 0 ? -1 : 1);
+      } else if (kind == 1 && !wires.empty()) {
+        // Клик по середине провода выделяет его, если сверху нет блока
+        fixture.render();
+
+        const Rml::Vector2f middle = fixture.wires()->findMiddle(fixture.pick(wires.size()));
+
+        fixture.moveMouse(middle);
+        fixture.press();
+        fixture.release();
+      } else {
+        fixture.stepRandom();
+      }
+
+      fixture.checkWireMesh();
+    }
+  }
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Правка значения не трогает сетку проводов (D-090)") {
+  this->openGenerator();
+
+  const ModuleId filter = this->findModule("filter");
+  const auto work = this->countWork([this, filter] {
+    this->apply(SetParameter{ filter, "cutoff", 1234.0f });
+  });
+
+  CHECK(this->wires()->getWires().size() > 1);
+  CHECK(work.first == 0);
+  CHECK(work.second == 0);
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Сдвиг холста только собирает готовые куски проводов заново (D-090)") {
+  this->openGenerator();
+
+  const auto work = this->countWork([this] {
+    this->scrollCanvas(1);
+  });
+
+  CHECK(work.first == 0);
+  CHECK(work.second == 1);
+  this->checkWireMesh();
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Перенос блока считает только провода с одним концом в нём (D-090)") {
+  this->openGenerator();
+  this->render();
+
+  const ModuleId amp = this->findModule("amp");
+  Rml::Element* block = this->block(amp);
+  const auto& list = this->wires()->getWires();
+  const auto touched = std::ranges::count_if(list, [block](const Wire& wire) {
+    return block->Contains(wire.from) != block->Contains(wire.to);
+  });
+
+  REQUIRE(touched > 0);
+  REQUIRE((size_t)touched < list.size());
+
+  const auto work = this->countWork([this, amp] {
+    this->apply(SetModulePosition{ amp, { 333.0f, 222.0f } });
+  });
+
+  CHECK(work.first == (uint64_t)touched);
+  CHECK(work.second == 1);
+  this->checkWireMesh();
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Выделение пересчитывает один провод, смена масштаба все (D-090)") {
+  this->openGenerator();
+  this->render();
+
+  const Rml::Vector2f middle = this->wires()->findMiddle(0);
+  const auto selected = this->countWork([this, middle] {
+    this->moveMouse(middle);
+    this->press();
+    this->release();
+  });
+
+  CHECK(std::ranges::count_if(this->wires()->getWires(), &Wire::isSelected) == 1);
+  CHECK(selected.first == 1);
+  this->checkWireMesh();
+
+  const auto scaled = this->countWork([this] {
+    this->context->SetDensityIndependentPixelRatio(1.5f);
+    this->frame();
+  });
+
+  CHECK(scaled.first == this->wires()->getWires().size());
+  this->checkWireMesh();
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Удалённый провод исчезает из сетки, а без проводов она пуста (D-090)") {
+  this->openGenerator();
+
+  const std::vector<Connection> connections = this->model().getConnections();
+  const std::vector<ModRoute> routes = this->model().getRoutes();
+
+  for (const Connection& connection : connections) {
+    this->apply(Disconnect{ connection });
+  }
+
+  for (const ModRoute& route : routes) {
+    this->apply(RemoveRoute{ route.source, route.target });
+  }
+
+  this->render();
+
+  CHECK(this->wires()->getWires().empty());
+  CHECK(this->wires()->getMesh().vertices.empty());
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Провод под мышью рисуется и исчезает после отпускания (D-090)") {
+  this->openGenerator();
+
+  const Rml::Vector2f start = this->center(this->get(".block .port.modulation.output"));
+
+  this->moveMouse(start);
+  this->press();
+  this->moveMouse(start + Rml::Vector2f(30.0f, 30.0f));
+  this->checkWireMesh();
+
+  CHECK_FALSE(this->draft()->getMesh().vertices.empty());
+
+  this->moveMouse(start + Rml::Vector2f(60.0f, 10.0f));
+  this->checkWireMesh();
+  this->release();
+  this->checkWireMesh();
+
+  CHECK(this->draft()->getMesh().vertices.empty());
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Сетка лежит там, где концы проводов, индексы указывают на свои вершины (D-090)") {
+  Rml::Element* firstStart = this->addPoint(100, 100);
+  Rml::Element* firstEnd = this->addPoint(300, 200);
+  Rml::Element* secondStart = this->addPoint(600, 400);
+  Rml::Element* secondEnd = this->addPoint(900, 500);
+
+  this->wires()->setWires({ { firstStart, firstEnd, WIRE_KIND::AUDIO }, { secondStart, secondEnd, WIRE_KIND::AUDIO } });
+  this->render();
+
+  const Rml::Mesh& mesh = this->wires()->getMesh();
+
+  REQUIRE_FALSE(mesh.vertices.empty());
+
+  const auto [left, right] = std::ranges::minmax(mesh.vertices | std::views::transform([](const Rml::Vertex& vertex) {
+    return vertex.position.x;
+  }));
+  const auto [top, bottom] = std::ranges::minmax(mesh.vertices | std::views::transform([](const Rml::Vertex& vertex) {
+    return vertex.position.y;
+  }));
+
+  CHECK(left == doctest::Approx(100.0f).epsilon(0.02));
+  CHECK(right == doctest::Approx(900.0f).epsilon(0.02));
+  CHECK(top == doctest::Approx(100.0f).epsilon(0.05));
+  CHECK(bottom == doctest::Approx(500.0f).epsilon(0.02));
+
+  // Второй провод ссылается на свои вершины, а не на вершины первого
+  CHECK(*std::ranges::max_element(mesh.indices) == (int)mesh.vertices.size() - 1);
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Провод с теми же концами перерисовывается при смене типа (D-090)") {
+  Rml::Element* start = this->addPoint(100, 100);
+  Rml::Element* end = this->addPoint(300, 200);
+
+  this->wires()->setWires({ { start, end, WIRE_KIND::AUDIO } });
+  this->checkWireMesh();
+
+  this->wires()->setWires({ { start, end, WIRE_KIND::MODULATION } });
+  this->checkWireMesh();
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Провод с теми же концами перерисовывается при смене масштаба (D-090)") {
+  Rml::Element* start = this->addPoint(100, 100);
+  Rml::Element* end = this->addPoint(300, 200);
+
+  this->wires()->setWires({ { start, end, WIRE_KIND::MODULATION } });
+  this->checkWireMesh();
+
+  this->context->SetDensityIndependentPixelRatio(2.0f);
+  this->checkWireMesh();
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Новый провод с нулевыми концами не считается уже посчитанным (D-090)") {
+  Rml::Element* point = this->addPoint(0, 0);
+
+  this->wires()->setWires({});
+  this->render();
+  this->wires()->setWires({ { point, point, WIRE_KIND::AUDIO } });
+  this->checkWireMesh();
+
+  CHECK_FALSE(this->wires()->getMesh().vertices.empty());
 }

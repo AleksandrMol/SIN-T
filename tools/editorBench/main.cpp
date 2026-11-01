@@ -176,6 +176,19 @@ int main(int argc, char** argv) {
     (void)my_plug_apply_command(instance, SetParameter{ patch.valueModule, patch.valueParameter, toReal(*parameter, index % 2 != 0 ? high : low) });
   }));
 
+  printRow("блок", measure([&](int index) {
+    (void)my_plug_apply_command(instance, SetModulePosition{ patch.lastBlock, { 40.0f + (float)index, 40.0f } });
+  }));
+
+  // Мышь над углом холста: иначе колесо досталось бы ручке или панели
+  const Rml::Vector2f corner = document->GetElementById("canvas")->GetAbsoluteOffset(Rml::BoxArea::Border) + Rml::Vector2f(5.0f, 5.0f);
+
+  context->ProcessMouseMove((int)corner.x, (int)corner.y, 0);
+
+  printRow("панорама", measure([&](int index) {
+    context->ProcessMouseWheel(Rml::Vector2f(0.0f, index % 2 != 0 ? 1.0f : -1.0f), 0);
+  }));
+
   view.reset();
   Rml::RemoveContext("bench");
   Rml::ReleaseRenderManagers();
