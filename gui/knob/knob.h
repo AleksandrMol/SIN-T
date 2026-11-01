@@ -23,6 +23,9 @@ class Knob : public Rml::Element {
     void setModulation(float low, float high);
 
     float getValue() const;
+    float getOrigin() const;
+    float getModulationLow() const;
+    float getModulationHigh() const;
 
   protected:
     void OnRender() override;

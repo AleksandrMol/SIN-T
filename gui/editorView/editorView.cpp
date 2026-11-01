@@ -73,6 +73,10 @@ std::string EditorView::getMessage() const {
   return this->overlays.getMessage();
 }
 
+const EditorScene& EditorView::getScene() const {
+  return this->scene;
+}
+
 float EditorView::getScale() const {
   return this->document->GetContext()->GetDensityIndependentPixelRatio();
 }

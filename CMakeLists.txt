@@ -254,12 +254,17 @@ if(SINT_BUILD_TESTS)
     add_executable(sint_gui_tests
       tests/gui/main.cpp
       tests/gui/editor.test.cpp
+      tests/gui/viewUpdate.test.cpp
     )
     target_link_libraries(sint_gui_tests PRIVATE sint_gui_view sint_plugin_objects sint_no_editor doctest::doctest)
     add_test(NAME sint_gui_tests COMMAND sint_gui_tests)
 
     # Открывает окно редактора и сохраняет кадр: так внешний вид проверяется без DAW
-    add_executable(sint_editor_preview tools/editorPreview/main.cpp $<TARGET_OBJECTS:sint_editor>)
+    add_executable(sint_editor_preview tools/editorPreview/main.cpp tools/editorBench/largePatch.cpp $<TARGET_OBJECTS:sint_editor>)
     target_link_libraries(sint_editor_preview PRIVATE sint_plugin_objects sint_gui_window X11::X11)
+
+    # Замер редактора на большой схеме без окна (D-079)
+    add_executable(sint_editor_bench tools/editorBench/main.cpp tools/editorBench/largePatch.cpp)
+    target_link_libraries(sint_editor_bench PRIVATE sint_gui_view sint_plugin_objects sint_no_editor)
   endif()
 endif()

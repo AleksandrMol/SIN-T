@@ -112,6 +112,10 @@ void WireLayer::setWires(std::vector<Wire> wires) {
   this->wires = std::move(wires);
 }
 
+const std::vector<Wire>& WireLayer::getWires() const {
+  return this->wires;
+}
+
 void WireLayer::selectWire(std::optional<size_t> index) {
   for (size_t current = 0; current < this->wires.size(); current++) {
     this->wires[current].isSelected = current == index;

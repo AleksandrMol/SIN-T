@@ -48,6 +48,8 @@ class EditorView final : public Rml::EventListener {
      */
     std::string getMessage() const;
 
+    const EditorScene& getScene() const;
+
   private:
     enum class DRAG_KIND {
       NONE,

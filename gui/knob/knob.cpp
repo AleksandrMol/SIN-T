@@ -44,6 +44,18 @@ float Knob::getValue() const {
   return this->value;
 }
 
+float Knob::getOrigin() const {
+  return this->origin;
+}
+
+float Knob::getModulationLow() const {
+  return this->modulationLow;
+}
+
+float Knob::getModulationHigh() const {
+  return this->modulationHigh;
+}
+
 void Knob::OnResize() {
   this->isDirty = true;
 }

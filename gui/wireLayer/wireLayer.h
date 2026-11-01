@@ -31,6 +31,7 @@ class WireLayer : public Rml::Element {
     using Rml::Element::Element;
 
     void setWires(std::vector<Wire> wires);
+    const std::vector<Wire>& getWires() const;
     void selectWire(std::optional<size_t> index);
 
     /**

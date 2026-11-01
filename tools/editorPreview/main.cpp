@@ -1,15 +1,18 @@
 // Открывает окно редактора настоящего плагина и сохраняет кадр: так внешний вид проверяется без DAW.
 // Запуск: sint_editor_preview <кадр.ppm> [--open] [--preset файл] [--scale 1.5] [--resize ШxВ] [--hold секунды]
 // --hold держит окно открытым: за это время в него можно отправить события мыши снаружи
+// --bench БЛОКИxМАРШРУТЫ собирает большую схему и меряет путь от правки до готового кадра с настоящим OpenGL
 // Только для разработки, в плагин не входит.
 
 #include <X11/Xlib.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -18,6 +21,7 @@
 #include "../../clap/clap.h"
 #include "../../gui/pluginWindow/pluginWindow.h"
 #include "../../plugin/plugin.h"
+#include "../editorBench/largePatch.h"
 
 // Окно редактора объявлено в plugin/editor.cpp, а здесь нужен только его PluginWindow
 extern PluginWindow& my_plugin_get_editor_window(MyPluginInstance* instance);
@@ -62,6 +66,8 @@ int main(int argc, char** argv) {
   int holdMilliseconds = 0;
   uint32_t resizeWidth = 0;
   uint32_t resizeHeight = 0;
+  size_t benchBlocks = 0;
+  size_t benchRoutes = 0;
   std::string presetPath;
 
   for (int index = 2; index < argc; index++) {
@@ -75,6 +81,8 @@ int main(int argc, char** argv) {
       holdMilliseconds = (int)(std::atof(argv[++index]) * 1000.0);
     } else if (!std::strcmp(argv[index], "--resize") && index + 1 < argc) {
       std::sscanf(argv[++index], "%ux%u", &resizeWidth, &resizeHeight);
+    } else if (!std::strcmp(argv[index], "--bench") && index + 1 < argc) {
+      std::sscanf(argv[++index], "%zux%zu", &benchBlocks, &benchRoutes);
     }
   }
 
@@ -99,6 +107,7 @@ int main(int argc, char** argv) {
     }
   }
 
+  const LargePatch patch = benchBlocks > 0 ? buildLargePatch(instance, benchBlocks, benchRoutes) : LargePatch{};
   const auto* gui = (const clap_plugin_gui_t*)plugin->get_extension(plugin, CLAP_EXT_GUI);
   const auto* timer = (const clap_plugin_timer_support_t*)plugin->get_extension(plugin, CLAP_EXT_TIMER_SUPPORT);
 
@@ -164,6 +173,52 @@ int main(int argc, char** argv) {
     XSync(display, False);
     gui->set_size(plugin, resizeWidth, resizeHeight);
     pump(300);
+  }
+
+  if (benchBlocks > 0) {
+    PluginWindow& window = my_plugin_get_editor_window(instance);
+
+    window.openGraph(patch.generator);
+    pump(500);
+
+    // От правки до кадра, как при настоящей работе: кадры идут с паузой, а не вплотную
+    const auto measure = [&](const char* name, const std::function<void(int)>& change) {
+      std::vector<double> samples;
+
+      for (int index = 0; index < 40; index++) {
+        const uint64_t frames = window.getFrameCount();
+        const auto start = std::chrono::steady_clock::now();
+
+        change(index);
+
+        while (window.getFrameCount() == frames) {
+          timer->on_timer(plugin, s_timerId);
+        }
+
+        samples.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+        pump(32);
+      }
+
+      std::ranges::sort(samples);
+      std::printf("%-12s медиана %7.2f  худший %7.2f мс\n", name, samples[samples.size() / 2], samples.back());
+    };
+
+    std::printf("Блоков на холсте %zu, маршрутов %zu\n", patch.blockCount, patch.routeCount);
+
+    measure("структура", [&](int index) {
+      (void)my_plug_apply_command(instance, SetModuleEnabled{ patch.lastBlock, index % 2 != 0 });
+    });
+
+    measure("значение", [&](int index) {
+      const float value = index % 2 != 0 ? 0.8f : 0.2f;
+      const ModuleInstance* module = instance->model->findModule(patch.valueModule);
+
+      for (const ParameterDescriptor& parameter : module->descriptor->parameters) {
+        if (parameter.key == patch.valueParameter) {
+          (void)my_plug_apply_command(instance, SetParameter{ patch.valueModule, parameter.key, toReal(parameter, value) });
+        }
+      }
+    });
   }
 
   pump(holdMilliseconds);

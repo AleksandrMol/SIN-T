@@ -50,6 +50,14 @@ const std::vector<KnobView>& EditorScene::getKnobs() const {
   return this->knobs;
 }
 
+const std::vector<RouteView>& EditorScene::getRoutes() const {
+  return this->routes;
+}
+
+const std::map<ModuleId, Rml::Element*>& EditorScene::getBlocks() const {
+  return this->blocks;
+}
+
 const std::vector<Rml::Element*>& EditorScene::getPorts() const {
   return this->ports;
 }

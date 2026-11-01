@@ -54,6 +54,8 @@ class EditorScene final {
     void refresh(const Rml::Element* heldBlock);
 
     const std::vector<KnobView>& getKnobs() const;
+    const std::vector<RouteView>& getRoutes() const;
+    const std::map<ModuleId, Rml::Element*>& getBlocks() const;
     const std::vector<Rml::Element*>& getPorts() const;
     const std::vector<WireRef>& getWireRefs() const;
 

@@ -57,6 +57,7 @@ ctest --test-dir build --output-on-failure       # sint_tests, sint_gui_tests, �
 cmake --install build --prefix ~/.clap
 ./build/sint_render out.wav --preset examples/two-saws.sintpreset --keys 45,57 --hold 3 --tail 0.1   # ещё --rate, --block
 ./build/sint_editor_preview out.ppm --open       # окно редактора и кадр, см. docs/VERIFICATION.md
+./build/sint_editor_bench 60 100                 # замер редактора на большой схеме
 cmake --build build --target update_golden       # только при намеренном изменении звука, см. docs/VERIFICATION.md
 ```
 
@@ -75,8 +76,8 @@ cmake --build build --target update_golden       # только при наме�
   - Модули: `oscillator`, `filter`, `amp`, `env`, `lfo`, `macros`.
 - `plugin/` — CLAP: `parameters.cpp` (значения от хоста), `editing.cpp` (правки со стороны плагина), `pluginEditorBackend` (плагин для редактора), `editor.cpp` (`clap.gui`, таймер), `noEditor.cpp` (сборки без окна).
 - `gui/` — редактор: `editorView` (мышь в команды, какой граф показан), `editorScene` (модель в элементы, как render), `editorOverlays` (меню, ввод текста, сообщение), `elementTools` (мелкие функции для элементов), `editorDocument` (разметка и стили), `editorBackend` (контракт с плагином), `graphLayout`, `knob`, `wireLayer`, `wireGeometry`, `meshBuilder`, `rmlRuntime`, `pluginWindow`.
-- `tests/` — doctest, `<тема>.test.cpp`. `modelFixture.h` — тестовые модули, `allocationCounter` — счётчик памяти в аудиопотоке. `parameters.test.cpp` — полный плагин через CLAP с записывающим хостом, `liveChanges.test.cpp` — правки под звук, `gui/editor.test.cpp` — настоящий RmlUi и плагин с пустой отрисовкой, мышь идёт через те же вызовы, что и в окне. `golden/` — эталоны звука.
-- `tools/` — `offlineHost`, `wav`, `render`, `editorPreview`, `goldenScenarios` (сценарии эталонов), `updateGolden`. `examples/` — пресеты, проверяются тестом. `prototypes/gui-rmlui/` — старый прототип, нужен только ради `test_host`.
+- `tests/` — doctest, `<тема>.test.cpp`. `modelFixture.h` — тестовые модули, `allocationCounter` — счётчик памяти в аудиопотоке. `parameters.test.cpp` — полный плагин через CLAP с записывающим хостом, `liveChanges.test.cpp` — правки под звук, `gui/editor.test.cpp` — настоящий RmlUi и плагин с пустой отрисовкой, мышь идёт через те же вызовы, что и в окне (стенд в `gui/editorFixture.h`). `gui/viewUpdate.test.cpp` — вид после случайных правок совпадает с построенным заново. `golden/` — эталоны звука.
+- `tools/` — `offlineHost`, `wav`, `render`, `editorPreview`, `editorBench`, `goldenScenarios` (сценарии эталонов), `updateGolden`. `examples/` — пресеты, проверяются тестом. `prototypes/gui-rmlui/` — старый прототип, нужен только ради `test_host`.
 - `scripts/` — `check.sh` (полная проверка), `checkLibVersions.sh` (версии библиотек). `.github/workflows/check.yml` — CI.
 
 Новый модуль: `engine/<name>/<name>Processor.{h,cpp}` с описанием, строка в `moduleCatalog`, `.cpp` в `CMakeLists.txt`. Ручки, порты и матрица появятся сами (ТЗ §12).
