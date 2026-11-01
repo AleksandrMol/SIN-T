@@ -172,6 +172,7 @@ install(TARGETS sint LIBRARY DESTINATION .)
 
 # Хост без DAW: запускает плагин через CLAP и отдаёт звук в память
 add_library(sint_offline STATIC
+  tools/goldenScenarios/goldenScenarios.cpp
   tools/offlineHost/offlineHost.cpp
   tools/wav/wav.cpp
 )
@@ -199,6 +200,7 @@ if(SINT_BUILD_TESTS)
     tests/clapPlugin.test.cpp
     tests/engine.test.cpp
     tests/filter.test.cpp
+    tests/golden.test.cpp
     tests/graphLayout.test.cpp
     tests/liveChanges.test.cpp
     tests/modulation.test.cpp
@@ -219,8 +221,17 @@ if(SINT_BUILD_TESTS)
     gui/wireGeometry/wireGeometry.cpp
   )
   target_link_libraries(sint_tests PRIVATE sint_offline doctest::doctest nlohmann_json::nlohmann_json)
-  target_compile_definitions(sint_tests PRIVATE SINT_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
+  target_compile_definitions(sint_tests PRIVATE
+    SINT_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples"
+    SINT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+  )
   add_test(NAME sint_tests COMMAND sint_tests)
+
+  # Эталоны звука обновляются только этой командой, после сборки текущего кода (D-072):
+  # cmake --build build --target update_golden
+  add_executable(sint_update_golden tools/updateGolden/main.cpp)
+  target_link_libraries(sint_update_golden PRIVATE sint_offline)
+  add_custom_target(update_golden COMMAND sint_update_golden ${CMAKE_CURRENT_SOURCE_DIR} USES_TERMINAL)
 
   # Плагин загрузится в flatpak-Reaper (D-076). С санитайзером он туда не попадает.
   # Две проверки ниже следят, что скрипт умеет падать: зелёный результат без них ничего не значит

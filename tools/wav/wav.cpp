@@ -2,7 +2,9 @@
 
 #include <bit>
 #include <cstddef>
+#include <cstring>
 #include <fstream>
+#include <iterator>
 
 namespace {
   constexpr uint16_t FORMAT_IEEE_FLOAT = 3;
@@ -26,6 +28,25 @@ namespace {
 
   void writeTag(std::vector<char>& bytes, const char (&tag)[5]) {
     bytes.insert(bytes.end(), tag, tag + 4);
+  }
+
+  uint16_t readU16(const std::vector<char>& bytes, size_t offset) {
+    return (uint16_t)((uint8_t)bytes[offset] | ((uint8_t)bytes[offset + 1] << 8));
+  }
+
+  uint32_t readU32(const std::vector<char>& bytes, size_t offset) {
+    return (uint32_t)readU16(bytes, offset) | ((uint32_t)readU16(bytes, offset + 2) << 16);
+  }
+
+  bool hasTag(const std::vector<char>& bytes, size_t offset, const char (&tag)[5]) {
+    return std::memcmp(bytes.data() + offset, tag, 4) == 0;
+  }
+
+  bool isSupportedFormat(const std::vector<char>& bytes, size_t offset, uint32_t size) {
+    return size >= 16
+      && readU16(bytes, offset) == FORMAT_IEEE_FLOAT
+      && readU16(bytes, offset + 2) == CHANNEL_COUNT
+      && readU16(bytes, offset + 14) == BYTES_PER_SAMPLE * 8;
   }
 }
 
@@ -75,4 +96,67 @@ bool writeWav(const std::string& path, const StereoBuffer& audio, uint32_t sampl
   file.write(bytes.data(), (std::streamsize)bytes.size());
 
   return file.good();
+}
+
+std::optional<WavFile> readWav(const std::string& path) {
+  std::ifstream file(path, std::ios::binary);
+
+  if (!file) {
+    return std::nullopt;
+  }
+
+  const std::vector<char> bytes{ std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
+  constexpr size_t RIFF_HEADER_SIZE = 12;
+
+  if (bytes.size() < RIFF_HEADER_SIZE || !hasTag(bytes, 0, "RIFF") || !hasTag(bytes, 8, "WAVE")) {
+    return std::nullopt;
+  }
+
+  std::optional<uint32_t> sampleRate;
+  size_t offset = RIFF_HEADER_SIZE;
+
+  while (bytes.size() - offset >= CHUNK_HEADER_SIZE) {
+    const size_t body = offset + CHUNK_HEADER_SIZE;
+    const uint32_t size = readU32(bytes, offset + 4);
+
+    if (size > bytes.size() - body) {
+      return std::nullopt;
+    }
+
+    if (hasTag(bytes, offset, "fmt ")) {
+      if (!isSupportedFormat(bytes, body, size)) {
+        return std::nullopt;
+      }
+
+      sampleRate = readU32(bytes, body + 4);
+    } else if (hasTag(bytes, offset, "data")) {
+      const size_t frameSize = CHANNEL_COUNT * BYTES_PER_SAMPLE;
+
+      if (!sampleRate || size % frameSize != 0) {
+        return std::nullopt;
+      }
+
+      WavFile wav = { .audio = {}, .sampleRate = *sampleRate };
+      const size_t frameCount = size / frameSize;
+
+      wav.audio.left.resize(frameCount);
+      wav.audio.right.resize(frameCount);
+
+      for (size_t i = 0; i < frameCount; i++) {
+        wav.audio.left[i] = std::bit_cast<float>(readU32(bytes, body + i * frameSize));
+        wav.audio.right[i] = std::bit_cast<float>(readU32(bytes, body + i * frameSize + BYTES_PER_SAMPLE));
+      }
+
+      return wav;
+    }
+
+    // Блоки выровнены по двум байтам
+    offset = body + size + (size & 1);
+
+    if (offset > bytes.size()) {
+      return std::nullopt;
+    }
+  }
+
+  return std::nullopt;
 }
