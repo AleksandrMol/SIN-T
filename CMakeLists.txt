@@ -122,7 +122,10 @@ if(SINT_BUILD_GUI)
   # Редактор без окна: его можно запустить в тестах на настоящем RmlUi, без дисплея и OpenGL
   add_library(sint_gui_view STATIC
     gui/editorDocument/editorDocument.cpp
+    gui/editorOverlays/editorOverlays.cpp
+    gui/editorScene/editorScene.cpp
     gui/editorView/editorView.cpp
+    gui/elementTools/elementTools.cpp
     gui/graphLayout/graphLayout.cpp
     gui/knob/knob.cpp
     gui/meshBuilder/meshBuilder.cpp
