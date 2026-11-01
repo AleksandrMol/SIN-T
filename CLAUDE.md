@@ -69,7 +69,7 @@ cmake --build build --target update_golden       # только при наме�
 ## Структура
 
 - `engine/` — всё без DAW и окна. Одна сущность на папку.
-  - Модель: `modelTypes`, `command`, `synthModel`, `preset`, `defaultPreset`, `sessionState`, `presetLibrary`, `slotTable` (со `SlotInbox` и `SlotOutbox`).
+  - Модель: `modelTypes`, `command`, `synthModel`, `preset`, `presetMigration`, `defaultPreset`, `sessionState`, `presetLibrary`, `slotTable` (со `SlotInbox` и `SlotOutbox`).
   - Описания: `parameterDescriptor`, `moduleDescriptor`, `moduleRegistry`, `builtinModules`, `moduleCatalog` (список всех модулей).
   - Исполнение: `engine`, `executionPlan`, `planExchange`, `modulationPlan`, `modulationCompiler`, `voicePool`, `generator`, `moduleProcessor`, `stubProcessor`.
   - Модули: `oscillator`, `filter`, `amp`, `env`, `lfo`, `macros`.
@@ -101,7 +101,7 @@ cmake --build build --target update_golden       # только при наме�
 **Совместимость проектов и пресетов**
 - ID плагина `com.chillyswim.sin-t` не менять (D-022).
 - Типы модулей и ключи параметров — постоянные строки. Диапазон параметра меняется только с миграцией (D-020, D-025). ID модулей не используются повторно (D-036).
-- Новое поле в файле необязательно, а его значение по умолчанию даёт прежний звук: версия формата пока 1 (D-041, D-049, D-065).
+- Новое поле в файле необязательно, а его значение по умолчанию даёт прежний звук: версия формата пока 1 (D-041, D-049, D-065). Иначе нужна миграция, порядок в `docs/VERIFICATION.md` (D-086).
 - Пул слотов можно только увеличивать, номер слота — это `clap_id` (D-011).
 - Неизвестный модуль становится заглушкой, его данные не теряются при пересохранении (D-021).
 

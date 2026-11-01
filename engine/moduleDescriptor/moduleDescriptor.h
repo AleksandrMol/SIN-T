@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <expected>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,6 +13,12 @@ class ModuleProcessor;
 
 // Создаёт DSP-часть модуля. Модель её не вызывает и от DSP не зависит (D-033)
 using ProcessorFactory = std::unique_ptr<ModuleProcessor> (*)();
+
+// Параметры модуля из файла в реальных единицах: ключ -> значение (D-025)
+using ParameterValues = std::map<std::string, float>;
+
+// Переводит параметры на одну версию типа вперёд (D-086). Значения может и не быть: файл его не обязан хранить
+using ModuleMigration = void (*)(ParameterValues& values);
 
 enum class MOD_POLARITY {
   UNIPOLAR, // 0..1, например ENV
@@ -51,6 +58,7 @@ struct ModuleDescriptor {
   std::string type; // Постоянная строка: по ней тип ищется в пресетах
   std::string name;
   uint32_t typeVersion = 1;
+  std::vector<ModuleMigration> migrations{}; // migrations[n] переводит версию n + 1 в версию n + 2
   std::vector<PortDescriptor> inputs{};
   std::vector<PortDescriptor> outputs{};
   std::vector<ModOutputDescriptor> modOutputs{};

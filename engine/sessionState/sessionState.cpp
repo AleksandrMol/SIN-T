@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 
 #include "../preset/preset.h"
+#include "../presetMigration/presetMigration.h"
 
 namespace {
   using json = nlohmann::json;
@@ -53,7 +54,11 @@ std::expected<SessionState, std::string> loadSession(const ModuleRegistry* regis
   }
 
   try {
-    const json file = json::parse(text.begin(), text.end());
+    // Поле session тоже подчиняется версии файла, поэтому читается после миграций
+    json file = json::parse(text.begin(), text.end());
+
+    migrateFile(file);
+
     SessionState state = { .model = std::move(*model), .slots = {}, .presetName = {} };
 
     if (file.contains("session")) {
@@ -67,6 +72,8 @@ std::expected<SessionState, std::string> loadSession(const ModuleRegistry* regis
 
     return state;
   } catch (const json::exception& error) {
+    return std::unexpected(std::string("ошибка в состоянии: ") + error.what());
+  } catch (const PresetError& error) {
     return std::unexpected(std::string("ошибка в состоянии: ") + error.what());
   } catch (const std::invalid_argument& error) {
     return std::unexpected(std::string("ошибка в состоянии: ") + error.what());

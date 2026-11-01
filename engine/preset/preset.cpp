@@ -7,28 +7,15 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <stdexcept>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "../builtinModules/builtinModules.h"
+#include "../presetMigration/presetMigration.h"
 
 namespace {
   using json = nlohmann::json;
-
-  constexpr uint64_t CURRENT_VERSION = 1;
-
-  // MIGRATIONS[n] переводит файл версии n + 1 в версию n + 2 (D-020)
-  using Migration = void (*)(json& file);
-  const std::vector<Migration> MIGRATIONS = {};
-
-  /**
-   * Ошибка содержимого файла. Наружу не выходит: loadModel превращает её в текст
-   */
-  class PresetError : public std::runtime_error {
-    using std::runtime_error::runtime_error;
-  };
 
   /**
    * Самая короткая запись числа: 1200 и 0.1 вместо 1200.0 и 0.10000000149011612.
@@ -242,27 +229,6 @@ namespace {
     }
   }
 
-  /**
-   * Переводит файл старой версии в текущую. Файл более новой версии не читается
-   */
-  void migrate(json& file) {
-    const json& versionField = file.at("version");
-
-    if (!versionField.is_number_unsigned() || versionField.get<uint64_t>() == 0) {
-      throw PresetError("неверная версия файла");
-    }
-
-    const uint64_t version = versionField.get<uint64_t>();
-
-    if (version > CURRENT_VERSION) {
-      throw PresetError("файл создан более новой версией плагина");
-    }
-
-    for (uint64_t step = version; step < CURRENT_VERSION; step++) {
-      MIGRATIONS[step - 1](file);
-    }
-  }
-
   void throwIfFailed(const CommandResult& result) {
     if (!result) {
       throw PresetError(result.error());
@@ -272,7 +238,7 @@ namespace {
 
 std::string saveModel(const SynthModel& model) {
   json file = json::object();
-  file["version"] = CURRENT_VERSION;
+  file["version"] = CURRENT_PRESET_VERSION;
   file["nextModuleId"] = model.getNextId();
 
   json modules = json::array();
@@ -311,7 +277,8 @@ std::expected<SynthModel, std::string> loadModel(const ModuleRegistry* registry,
   try {
     json file = json::parse(text.begin(), text.end());
 
-    migrate(file);
+    migrateFile(file);
+    migrateModules(file, registry);
 
     SynthModel model(registry);
     ModuleId maxId = model.outputId;

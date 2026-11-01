@@ -49,6 +49,9 @@ TEST_CASE("validateModule отклоняет некорректные описа
   CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.type = ""; })).has_value());
   CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.name = ""; })).has_value());
   CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.typeVersion = 0; })).has_value());
+  CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.typeVersion = 2; })).has_value());
+  CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.migrations.push_back(+[](ParameterValues&) {}); })).has_value());
+  CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.typeVersion = 2; m.migrations.push_back(nullptr); })).has_value());
   CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.inputs.push_back({ "", "Empty" }); })).has_value());
   CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.outputs.push_back({ "out", "Copy" }); })).has_value());
   CHECK_FALSE(validateModule(broken(TEST_FILTER, [](auto& m) { m.parameters.push_back(m.parameters[0]); })).has_value());

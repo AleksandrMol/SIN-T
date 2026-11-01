@@ -42,6 +42,17 @@ std::expected<void, std::string> validateModule(const ModuleDescriptor& module) 
     return withLabel("версия типа начинается с 1");
   }
 
+  // Иначе старый файл молча потерял бы настройки: проверка срабатывает уже при регистрации модуля
+  if (module.migrations.size() != module.typeVersion - 1) {
+    return withLabel("на каждую версию типа после первой нужна одна миграция");
+  }
+
+  for (const ModuleMigration migration : module.migrations) {
+    if (migration == nullptr) {
+      return withLabel("пустая миграция");
+    }
+  }
+
   for (const auto& result : {
     validateKeys(module.inputs, "inputs"),
     validateKeys(module.outputs, "outputs"),
