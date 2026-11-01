@@ -3,6 +3,7 @@ project(sin_t C CXX)
 
 option(SINT_BUILD_TESTS "Собирать unit-тесты (doctest скачивается при настройке)" ON)
 option(SINT_BUILD_GUI "Собирать редактор (RmlUi, pugl и FreeType скачиваются при настройке)" ON)
+option(SINT_WERROR "Считать предупреждения в нашем коде ошибками" OFF)
 set(SINT_SANITIZER "" CACHE STRING "Санитайзер для отдельной сборки: thread или address")
 
 # Санитайзеры проверяют потоки движка, а библиотеки окна в их сборке только мешали бы
@@ -49,6 +50,9 @@ if(MSVC)
   add_compile_options(/W4 /utf-8)
 else()
   add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+if(SINT_WERROR)
+  add_compile_options($<IF:$<CXX_COMPILER_ID:MSVC>,/WX,-Werror>)
 endif()
 
 # DSP и модель. DSP без сторонних библиотек (D-002), JSON нужен только пресетам (D-020)
@@ -217,6 +221,17 @@ if(SINT_BUILD_TESTS)
   target_link_libraries(sint_tests PRIVATE sint_offline doctest::doctest nlohmann_json::nlohmann_json)
   target_compile_definitions(sint_tests PRIVATE SINT_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples")
   add_test(NAME sint_tests COMMAND sint_tests)
+
+  # Плагин загрузится в flatpak-Reaper (D-076). С санитайзером он туда не попадает.
+  # Две проверки ниже следят, что скрипт умеет падать: зелёный результат без них ничего не значит
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT SINT_SANITIZER)
+    set(SINT_CHECK_VERSIONS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/checkLibVersions.sh)
+    add_test(NAME sint_lib_versions COMMAND ${SINT_CHECK_VERSIONS} $<TARGET_FILE:sint>)
+    add_test(NAME sint_lib_versions_too_new COMMAND ${SINT_CHECK_VERSIONS} $<TARGET_FILE:sint> GLIBC=2.3)
+    set_tests_properties(sint_lib_versions_too_new PROPERTIES PASS_REGULAR_EXPRESSION "GLIBC_[0-9.]+ новее")
+    add_test(NAME sint_lib_versions_unreadable COMMAND ${SINT_CHECK_VERSIONS} ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt)
+    set_tests_properties(sint_lib_versions_unreadable PROPERTIES PASS_REGULAR_EXPRESSION "не удалось прочитать")
+  endif()
 
   if(SINT_BUILD_GUI)
     # Настоящий редактор и настоящий плагин, вместо окна пустая отрисовка

@@ -1,0 +1,19 @@
+name: Проверка
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    # Та же система и тот же компилятор, что на машине разработки
+    container: fedora:44
+    timeout-minutes: 60
+    steps:
+      - name: Инструменты сборки
+        run: dnf install -y --setopt=install_weak_deps=False gcc-c++ cmake ninja-build binutils libX11-devel mesa-libGL-devel
+      - uses: actions/checkout@v7
+      - name: Сборка и тесты
+        run: scripts/check.sh

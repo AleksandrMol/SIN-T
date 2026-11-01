@@ -38,7 +38,7 @@
 
 | Правка | Что нужно |
 | --- | --- |
-| Любая | Сборка без предупреждений, `ctest --test-dir build --output-on-failure` |
+| Любая | `scripts/check.sh`: сборка, предупреждения как ошибки, все тесты, версии библиотек для flatpak-Reaper |
 | Логика | Тест на новое поведение. Для сложного кода мутации |
 | Внешний вид редактора | Набор кадров из `sint_editor_preview` (D-073), посмотреть глазами: тесты вид не проверяют |
 | Потоки, аудиопуть | TSan и ASan, стресс-тест несколько раз, отрицательная проверка |
@@ -50,16 +50,17 @@
 ## Сборка
 
 ```sh
+scripts/check.sh                                 # всё сразу, то же выполняет CI после каждого push (D-071)
 cmake -S . -B build -G Ninja                     # настройка, зависимости скачиваются один раз
 cmake --build build
-ctest --test-dir build --output-on-failure       # sint_tests и sint_gui_tests
+ctest --test-dir build --output-on-failure       # sint_tests, sint_gui_tests, версии библиотек
 cmake --install build --prefix ~/.clap
 ./build/sint_render out.wav --preset examples/two-saws.sintpreset --keys 45,57 --hold 3 --tail 0.1   # ещё --rate, --block
 ./build/sint_editor_preview out.ppm --open       # окно редактора и кадр, см. docs/VERIFICATION.md
 ```
 
 - g++, C++23 без расширений GNU, `-Wall -Wextra -Wpedantic`, сборка без предупреждений. Сборка по умолчанию — `RelWithDebInfo`.
-- `-DSINT_BUILD_TESTS=OFF` без тестов, `-DSINT_BUILD_GUI=OFF` без редактора и его зависимостей.
+- `-DSINT_BUILD_TESTS=OFF` без тестов, `-DSINT_BUILD_GUI=OFF` без редактора и его зависимостей, `-DSINT_WERROR=ON` предупреждения как ошибки.
 - Новые `.cpp` добавляются в `CMakeLists.txt` явным списком.
 - Зависимости закреплены версией и SHA256, редакторные описаны в `cmake/gui-dependencies.cmake`. Заголовки CLAP в `clap/` не редактировать.
 - На машине: `git clone` с GitHub через прокси падает, `curl` и архивы работают; `dnf` не работает; `libstdc++-static`, `valgrind`, `Xvfb`, `xdotool`, `clap-validator` не установлены, `gdb` есть.
@@ -75,6 +76,7 @@ cmake --install build --prefix ~/.clap
 - `gui/` — редактор: `editorView` (строит вид, мышь в команды), `editorDocument` (разметка и стили), `editorBackend` (контракт с плагином), `graphLayout`, `knob`, `wireLayer`, `wireGeometry`, `meshBuilder`, `rmlRuntime`, `pluginWindow`.
 - `tests/` — doctest, `<тема>.test.cpp`. `modelFixture.h` — тестовые модули, `allocationCounter` — счётчик памяти в аудиопотоке. `parameters.test.cpp` — полный плагин через CLAP с записывающим хостом, `liveChanges.test.cpp` — правки под звук, `gui/editor.test.cpp` — настоящий RmlUi и плагин с пустой отрисовкой, мышь идёт через те же вызовы, что и в окне.
 - `tools/` — `offlineHost`, `wav`, `render`, `editorPreview`. `examples/` — пресеты, проверяются тестом. `prototypes/gui-rmlui/` — старый прототип, нужен только ради `test_host`.
+- `scripts/` — `check.sh` (полная проверка), `checkLibVersions.sh` (версии библиотек). `.github/workflows/check.yml` — CI.
 
 Новый модуль: `engine/<name>/<name>Processor.{h,cpp}` с описанием, строка в `moduleCatalog`, `.cpp` в `CMakeLists.txt`. Ручки, порты и матрица появятся сами (ТЗ §12).
 

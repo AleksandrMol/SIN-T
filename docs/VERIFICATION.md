@@ -40,6 +40,21 @@ Reaper установлен через flatpak (`fm.reaper.Reaper`), видит 
 
 `sint_render` пишет WAV с плавающей точкой (формат 3). Модуль `wave` в Python такой файл не читает, данные разбирать вручную через `struct` и `array`.
 
+## Версии библиотек
+
+`scripts/checkLibVersions.sh` входит в `ctest`. Границы в нём сняты со среды Reaper (`org.freedesktop.Platform` 25.08). Если у Reaper сменилась среда, снять заново:
+
+```sh
+L=$(flatpak info -l org.freedesktop.Platform//25.08)/files/lib/x86_64-linux-gnu
+LC_ALL=C objdump -p $L/libstdc++.so.6 | sed -n '/^Version definitions/,/^$/p' | awk 'NR>1 {print $4}' | sort -V
+```
+
+То же для `libc.so.6` и `libgcc_s.so.1`. Без `LC_ALL=C` заголовки переведены и разбор ничего не находит. Проверка не заменяет `ldd` из раздела про Reaper: она не видит библиотеку, которой нет в среде вовсе.
+
+## CI в контейнере на этой машине
+
+Чистая машина из `.github/workflows/check.yml` воспроизводится через `podman run` с образом `fedora:44`: скопировать в папку для временных файлов файлы из `git ls-files -co --exclude-standard`, подключить её через `-v` с `--security-opt label=disable`, поставить пакеты из файла CI и запустить `scripts/check.sh`. `dnf` падает на прокси, но в контейнере работает без него: ему одному убрать `http_proxy` и `https_proxy` через `env -u`, а зависимости сборки качать с прокси, как обычно.
+
 ## Санитайзеры
 
 ```sh
