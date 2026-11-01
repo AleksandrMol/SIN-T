@@ -55,7 +55,7 @@ class SlotTable {
 
     /**
      * Приводит таблицу в соответствие с моделью: слоты исчезнувших параметров освобождаются,
-     * новые параметры занимают первые свободные. Параметр, которому слота не хватило,
+     * новые параметры получают слоты по кольцу (D-087). Параметр, которому слота не хватило,
      * работает, но не экспортируется. Заглушки слотов не занимают: их параметры не меняются (D-021)
      */
     void sync(const SynthModel& model);
@@ -65,6 +65,12 @@ class SlotTable {
      * записи, которых нет в модели. Возвращает false, если номер не из пула или уже занят
      */
     bool restore(uint32_t slot, SlotBinding binding);
+
+    /**
+     * Ставит начало следующей выдачи из сохранённого состояния. Пусто, если в файле этого поля нет:
+     * выдача пойдёт сразу за последним занятым слотом. Возвращает false, если номер не из пула
+     */
+    bool restoreNextSlot(std::optional<uint32_t> slot);
 
     /**
      * Занятый слот или nullptr
@@ -82,6 +88,11 @@ class SlotTable {
     std::map<uint32_t, SlotBinding> getPoolBindings() const;
 
     /**
+     * С какого слота начнётся следующая выдача: это тоже часть состояния проекта (D-087)
+     */
+    uint32_t getNextSlot() const;
+
+    /**
      * Адреса всех слотов для плана
      */
     std::vector<SlotTarget> getTargets() const;
@@ -94,6 +105,12 @@ class SlotTable {
     bool operator==(const SlotTable&) const = default;
 
   private:
+    /**
+     * Ближайший свободный слот начиная с nextSlot, счётчик уходит за него. Пусто, если пул заполнен
+     */
+    std::optional<uint32_t> takeFreeSlot();
+
     std::map<uint32_t, SlotBinding> bindings;
     std::map<uint32_t, SlotInfo> infos;
+    uint32_t nextSlot = MACRO_COUNT;
 };

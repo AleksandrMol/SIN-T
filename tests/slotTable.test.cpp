@@ -1,6 +1,9 @@
 #include <algorithm>
+#include <numeric>
 #include <string>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "../engine/preset/preset.h"
 #include "../engine/sessionState/sessionState.h"
@@ -111,7 +114,7 @@ TEST_CASE_FIXTURE(SlotFixture, "Занятые слоты не меняются 
   CHECK(this->findSlot(second, "cutoff") == kept);
 }
 
-TEST_CASE_FIXTURE(SlotFixture, "Новый параметр занимает первый свободный слот (D-011)") {
+TEST_CASE_FIXTURE(SlotFixture, "Освобождённый слот не выдаётся сразу: новый параметр идёт дальше по кольцу (D-087)") {
   const ModuleId first = this->add("test.filter");
 
   this->add("test.filter");
@@ -124,7 +127,98 @@ TEST_CASE_FIXTURE(SlotFixture, "Новый параметр занимает п�
 
   this->sync();
 
-  CHECK(this->findSlot(lfo, "rate") == FIRST_POOL_SLOT);
+  CHECK(this->findSlot(lfo, "rate") == FIRST_POOL_SLOT + 4);
+  CHECK(this->table.find(FIRST_POOL_SLOT) == nullptr);
+  CHECK(this->table.find(FIRST_POOL_SLOT + 1) == nullptr);
+}
+
+TEST_CASE_FIXTURE(SlotFixture, "Номер возвращается только после полного круга по пулу (D-087)") {
+  std::vector<uint32_t> issued;
+
+  // По два параметра за раз: 512 модулей проходят пул ровно один раз
+  for (uint32_t index = 0; index < POOL_SLOT_COUNT / 2; index++) {
+    const ModuleId filter = this->add("test.filter");
+
+    this->sync();
+    issued.push_back(this->findSlot(filter, "cutoff"));
+    issued.push_back(this->findSlot(filter, "drive"));
+
+    REQUIRE(this->model->apply(RemoveModule{ filter }).has_value());
+    this->sync();
+  }
+
+  std::vector<uint32_t> expected(POOL_SLOT_COUNT);
+
+  std::ranges::iota(expected, FIRST_POOL_SLOT);
+  CHECK(issued == expected);
+
+  const ModuleId filter = this->add("test.filter");
+
+  this->sync();
+
+  CHECK(this->findSlot(filter, "cutoff") == FIRST_POOL_SLOT);
+}
+
+TEST_CASE_FIXTURE(SlotFixture, "Кольцо переходит через конец пула и пропускает занятые слоты (D-087)") {
+  const ModuleId kept = this->add("test.filter");
+
+  this->sync();
+
+  REQUIRE(this->findSlot(kept, "cutoff") == FIRST_POOL_SLOT);
+  REQUIRE(this->findSlot(kept, "drive") == FIRST_POOL_SLOT + 1);
+  REQUIRE(this->table.restoreNextSlot(SLOT_COUNT - 1));
+
+  const ModuleId filter = this->add("test.filter");
+
+  this->sync();
+
+  CHECK(this->findSlot(filter, "cutoff") == SLOT_COUNT - 1);
+  CHECK(this->findSlot(filter, "drive") == FIRST_POOL_SLOT + 2);
+  CHECK(this->table.getNextSlot() == FIRST_POOL_SLOT + 3);
+}
+
+TEST_CASE_FIXTURE(SlotFixture, "Заполненный пул не сдвигает счётчик: следующая выдача идёт с того же места (D-087)") {
+  std::vector<ModuleId> filters;
+
+  for (uint32_t index = 0; index < POOL_SLOT_COUNT / 2 + 1; index++) {
+    filters.push_back(this->add("test.filter"));
+  }
+
+  REQUIRE(this->table.restoreNextSlot(FIRST_POOL_SLOT + 100));
+  this->sync();
+
+  CHECK(this->table.getNextSlot() == FIRST_POOL_SLOT + 100);
+  CHECK(countBound(this->table) == SLOT_COUNT);
+
+  const uint32_t freed = this->findSlot(filters[60], "cutoff");
+
+  REQUIRE(this->model->apply(RemoveModule{ filters[60] }).has_value());
+  this->sync();
+
+  // Весь пул занят, поэтому остаётся только что освобождённый номер, хоть он и не прошёл круг
+  CHECK(this->findSlot(filters.back(), "cutoff") == freed);
+}
+
+TEST_CASE_FIXTURE(SlotFixture, "Единственный свободный слот находится, даже если он прямо позади счётчика (D-087)") {
+  const ModuleId first = this->add("test.lfo");
+
+  for (uint32_t index = 1; index < POOL_SLOT_COUNT; index++) {
+    this->add("test.lfo");
+  }
+
+  const ModuleId extra = this->add("test.lfo");
+
+  this->sync();
+
+  REQUIRE(this->findSlot(extra, "rate") == SLOT_COUNT);
+
+  const uint32_t freed = this->findSlot(first, "rate");
+
+  REQUIRE(this->model->apply(RemoveModule{ first }).has_value());
+  REQUIRE(this->table.restoreNextSlot(freed + 1));
+  this->sync();
+
+  CHECK(this->findSlot(extra, "rate") == freed);
 }
 
 TEST_CASE_FIXTURE(SlotFixture, "Параметры без слота работают, но не экспортируются, и получают освободившийся слот (D-011)") {
@@ -309,6 +403,78 @@ TEST_CASE_FIXTURE(SlotFixture, "Состояние проекта: таблиц�
   CHECK(*asPreset == *this->model);
 }
 
+TEST_CASE_FIXTURE(SlotFixture, "Счётчик выдачи переживает сохранение: освобождённый слот не вернётся после переоткрытия (D-087)") {
+  const ModuleId filter = this->add("test.filter");
+
+  this->sync();
+  REQUIRE(this->model->apply(RemoveModule{ filter }).has_value());
+  this->sync();
+
+  auto loaded = loadSession(&this->registry, saveSession(*this->model, this->table, ""));
+
+  REQUIRE_MESSAGE(loaded.has_value(), loaded.error());
+  CHECK(loaded->slots.getNextSlot() == FIRST_POOL_SLOT + 2);
+
+  const auto lfo = loaded->model.apply(AddModule{ "test.lfo" });
+
+  REQUIRE(lfo.has_value());
+  loaded->slots.sync(loaded->model);
+
+  CHECK(loaded->slots.findSlot(**lfo, "rate") == FIRST_POOL_SLOT + 2);
+}
+
+TEST_CASE_FIXTURE(SlotFixture, "Проект без счётчика: выдача идёт за последним слотом из файла (D-087)") {
+  const ModuleId filter = this->add("test.filter");
+
+  this->sync();
+
+  nlohmann::json file = nlohmann::json::parse(saveSession(*this->model, this->table, ""));
+
+  file["session"].erase("nextSlot");
+
+  const auto load = [this, &file] {
+    const auto loaded = loadSession(&this->registry, file.dump());
+
+    REQUIRE_MESSAGE(loaded.has_value(), loaded.error());
+
+    return *loaded;
+  };
+
+  SUBCASE("Последний слот занят параметром модели") {
+    const SessionState loaded = load();
+
+    CHECK(loaded.slots.getNextSlot() == FIRST_POOL_SLOT + 2);
+    CHECK(loaded.slots.findSlot(filter, "cutoff") == FIRST_POOL_SLOT);
+  }
+
+  SUBCASE("Запись без модуля тоже считается: её огибающая могла остаться в проекте") {
+    file["session"]["slots"].push_back({ { "slot", 300 }, { "module", 999 }, { "type", "test.filter" }, { "parameter", "cutoff" } });
+
+    const SessionState loaded = load();
+
+    CHECK(loaded.slots.getPoolBindings().size() == 2);
+    CHECK(loaded.slots.getNextSlot() == 301);
+  }
+
+  SUBCASE("За последним слотом пула выдача идёт с начала") {
+    file["session"]["slots"].push_back({ { "slot", SLOT_COUNT - 1 }, { "module", 999 }, { "type", "test.filter" }, { "parameter", "cutoff" } });
+
+    CHECK(load().slots.getNextSlot() == FIRST_POOL_SLOT);
+  }
+}
+
+TEST_CASE("Счётчик выдачи принимает только номера пула (D-087)") {
+  SlotTable table;
+
+  CHECK_FALSE(table.restoreNextSlot(MACRO_COUNT - 1));
+  CHECK_FALSE(table.restoreNextSlot(SLOT_COUNT));
+  CHECK(table.getNextSlot() == FIRST_POOL_SLOT);
+
+  CHECK(table.restoreNextSlot(MACRO_COUNT));
+  CHECK(table.restoreNextSlot(SLOT_COUNT - 1));
+  CHECK(table.getNextSlot() == SLOT_COUNT - 1);
+}
+
 TEST_CASE_FIXTURE(SlotFixture, "Испорченный раздел session отклоняется целиком") {
   this->add("test.filter");
   this->sync();
@@ -328,6 +494,9 @@ TEST_CASE_FIXTURE(SlotFixture, "Испорченный раздел session от
   CHECK_FALSE(loadSession(&this->registry, replaceAll("\"slot\": 8", "\"slot\": 5000")).has_value());
   CHECK_FALSE(loadSession(&this->registry, replaceAll("\"slot\": 8", "\"slot\": \"x\"")).has_value());
   CHECK_FALSE(loadSession(&this->registry, replaceAll("\"slots\": [", "\"other\": [")).has_value());
+  CHECK_FALSE(loadSession(&this->registry, replaceAll("\"nextSlot\": 10", "\"nextSlot\": 3")).has_value());
+  CHECK_FALSE(loadSession(&this->registry, replaceAll("\"nextSlot\": 10", "\"nextSlot\": 5000")).has_value());
+  CHECK_FALSE(loadSession(&this->registry, replaceAll("\"nextSlot\": 10", "\"nextSlot\": \"x\"")).has_value());
 }
 
 TEST_CASE("Ящик значений отдаёт только последнее значение каждого слота (D-056)") {

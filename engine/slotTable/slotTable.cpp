@@ -4,6 +4,13 @@
 #include <utility>
 
 namespace {
+  /**
+   * Слот пула, который идёт за данным по кольцу. Для последнего макроса это первый слот пула
+   */
+  uint32_t findFollowingPoolSlot(uint32_t slot) {
+    return MACRO_COUNT + (slot + 1 - MACRO_COUNT) % POOL_SLOT_COUNT;
+  }
+
   const ParameterDescriptor* findParameter(const ModuleInstance& module, const std::string& key) {
     const auto& parameters = module.descriptor->parameters;
     const auto it = std::ranges::find_if(parameters, [&key](const ParameterDescriptor& parameter) {
@@ -87,8 +94,6 @@ void SlotTable::sync(const SynthModel& model) {
     return !occupied.try_emplace({ entry.second.module, entry.second.parameter }, entry.first).second;
   });
 
-  uint32_t freeSlot = MACRO_COUNT;
-
   for (const auto& [id, module] : model.getModules()) {
     if (module.isStub()) {
       continue;
@@ -101,15 +106,13 @@ void SlotTable::sync(const SynthModel& model) {
       if (existing != occupied.end()) {
         slot = existing->second;
       } else {
-        while (this->bindings.contains(freeSlot)) {
-          freeSlot++;
-        }
+        const std::optional<uint32_t> taken = this->takeFreeSlot();
 
-        if (freeSlot >= SLOT_COUNT) {
+        if (!taken) {
           continue;
         }
 
-        slot = freeSlot;
+        slot = *taken;
         this->bindings[slot] = { id, module.descriptor->type, parameter.key };
       }
 
@@ -125,6 +128,39 @@ bool SlotTable::restore(uint32_t slot, SlotBinding binding) {
 
   // Макросы заняты с самого начала, поэтому их номера сюда не пройдут
   return this->bindings.try_emplace(slot, std::move(binding)).second;
+}
+
+bool SlotTable::restoreNextSlot(std::optional<uint32_t> slot) {
+  if (!slot) {
+    // Таблица не пуста: макросы заняты с самого начала
+    this->nextSlot = findFollowingPoolSlot(this->bindings.rbegin()->first);
+
+    return true;
+  }
+
+  if (*slot < MACRO_COUNT || *slot >= SLOT_COUNT) {
+    return false;
+  }
+
+  this->nextSlot = *slot;
+
+  return true;
+}
+
+std::optional<uint32_t> SlotTable::takeFreeSlot() {
+  uint32_t slot = this->nextSlot;
+
+  for (uint32_t step = 0; step < POOL_SLOT_COUNT; step++) {
+    if (!this->bindings.contains(slot)) {
+      this->nextSlot = findFollowingPoolSlot(slot);
+
+      return slot;
+    }
+
+    slot = findFollowingPoolSlot(slot);
+  }
+
+  return std::nullopt;
 }
 
 const SlotInfo* SlotTable::find(uint32_t slot) const {
@@ -151,6 +187,10 @@ std::map<uint32_t, SlotBinding> SlotTable::getPoolBindings() const {
   });
 
   return pool;
+}
+
+uint32_t SlotTable::getNextSlot() const {
+  return this->nextSlot;
 }
 
 std::vector<SlotTarget> SlotTable::getTargets() const {

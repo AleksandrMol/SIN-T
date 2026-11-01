@@ -1,5 +1,6 @@
 #include "./sessionState.h"
 
+#include <optional>
 #include <stdexcept>
 
 #include <nlohmann/json.hpp>
@@ -22,6 +23,15 @@ namespace {
         throw std::invalid_argument("неверный номер слота: " + entry.at("slot").dump());
       }
     }
+
+    // Поля нет в проектах, сохранённых до D-087
+    const std::optional<uint32_t> nextSlot = session.contains("nextSlot")
+      ? std::optional(session.at("nextSlot").get<uint32_t>())
+      : std::nullopt;
+
+    if (!slots.restoreNextSlot(nextSlot)) {
+      throw std::invalid_argument("неверный номер следующего слота: " + session.at("nextSlot").dump());
+    }
   }
 }
 
@@ -41,6 +51,7 @@ std::string saveSession(const SynthModel& model, const SlotTable& slots, const s
   file["session"] = {
     { "presetName", presetName },
     { "slots", std::move(entries) },
+    { "nextSlot", slots.getNextSlot() },
   };
 
   return file.dump(2);

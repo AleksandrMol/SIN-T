@@ -1508,6 +1508,47 @@ TEST_CASE("Модуль из редактора получает слот, а х
   CHECK(fixture.rescans.size() == 2);
 }
 
+TEST_CASE("Хост не получает чужую автоматизацию: номер удалённого параметра не достаётся новому (D-087)") {
+  ParamsFixture fixture;
+  const ModuleId generator = fixture.findModule("generator");
+  const auto added = my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+
+  REQUIRE(added.has_value());
+
+  const clap_id rate = fixture.findSlot("G1 LFO 1 Rate");
+
+  fixture.apply(RemoveModule{ **added });
+
+  SUBCASE("Сразу после удаления") {
+    const auto next = my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+
+    REQUIRE(next.has_value());
+    CHECK(fixture.findSlot("G1 LFO 1 Rate") > rate);
+    CHECK((fixture.info(rate).flags & CLAP_PARAM_IS_HIDDEN) != 0);
+  }
+
+  SUBCASE("После сохранения и загрузки в новый плагин") {
+    ParamsFixture reopened;
+
+    REQUIRE(reopened.load(fixture.save()));
+
+    const auto next = my_plug_apply_command(reopened.instance(), AddModule{ "lfo", generator });
+
+    REQUIRE(next.has_value());
+    CHECK(reopened.findSlot("G1 LFO 1 Rate") > rate);
+  }
+
+  SUBCASE("После смены пресета в том же плагине") {
+    REQUIRE(my_plug_load_preset(fixture.instance(), buildTwoOscillatorPreset(), "other").has_value());
+
+    const ModuleId otherGenerator = fixture.findModule("generator");
+    const auto next = my_plug_apply_command(fixture.instance(), AddModule{ "lfo", otherGenerator });
+
+    REQUIRE(next.has_value());
+    CHECK(fixture.findSlot("G1 LFO 1 Rate") > rate);
+  }
+}
+
 TEST_CASE("Удаление соседа сдвигает номера: хост получает новые имена (D-057)") {
   ParamsFixture fixture;
   const ModuleId generator = fixture.findModule("generator");
@@ -1595,6 +1636,7 @@ TEST_CASE("Значение хоста не достаётся новому па
   ParamsFixture fixture;
   const ModuleId generator = fixture.findModule("generator");
   const ModuleId lfo = **my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
+  const clap_id firstSlot = fixture.findSlot("G1 LFO 1 Wave");
   const clap_id slot = fixture.findSlot("G1 LFO 1 Rate");
   const clap_event_param_value_t value = makeValue(slot, 0.9);
 
@@ -1603,6 +1645,9 @@ TEST_CASE("Значение хоста не достаётся новому па
 
   // Значение ещё в пути к модели, а правка уже убирает его параметр и отдаёт слот новому
   fixture.apply(RemoveModule{ lfo });
+
+  // Номер возвращается после полного круга или при заполненном пуле (D-087): здесь сразу
+  REQUIRE(fixture.instance()->slots.restoreNextSlot(firstSlot));
 
   const ModuleId other = **my_plug_apply_command(fixture.instance(), AddModule{ "lfo", generator });
 
