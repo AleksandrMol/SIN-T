@@ -59,7 +59,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .name = "Level",
       .minValue = 0.0f,
       .maxValue = 1.0f,
-      .defaultValue = 0.1f,
+      .defaultValue = 0.5f,
       .isModulatable = true,
     },
   },

@@ -15,6 +15,7 @@
 
 #include "../clap/clap.h"
 #include "../engine/filter/filterProcessor.h"
+#include "../engine/defaultPreset/defaultPreset.h"
 #include "../engine/moduleCatalog/moduleCatalog.h"
 #include "../engine/oscillator/oscillatorProcessor.h"
 #include "../engine/preset/preset.h"
@@ -1046,6 +1047,37 @@ TEST_CASE("Транспорт без темпа даёт темп по умол�
 
     CHECK(countBursts(fixture.process(2 * SAMPLE_RATE, { &transport.header, &on.header })) == 4);
   }
+}
+
+TEST_CASE("Громкость пресета по умолчанию сравнима с ReaSynth (D-083)") {
+  const std::vector<OfflineNote> full = { { .key = 60, .startFrame = 0, .endFrame = 4800 } };
+  const std::vector<OfflineNote> medium = { { .key = 60, .startFrame = 0, .endFrame = 4800, .velocity = 100.0 / 127.0 } };
+
+  // ReaSynth в Reaper: пик 0,50 при velocity 127 и 0,39 при velocity 100
+  CHECK(peak(renderOffline(full, { .frameCount = 4800 }).left, 0, 4800) == doctest::Approx(0.45f).epsilon(0.05));
+  CHECK(peak(renderOffline(medium, { .frameCount = 4800 }).left, 0, 4800) == doctest::Approx(0.36f).epsilon(0.05));
+}
+
+TEST_CASE("Сохранённый уровень осциллятора не зависит от значения по умолчанию (D-083)") {
+  ModuleRegistry registry;
+  REQUIRE(addAllModules(registry).has_value());
+
+  auto model = createDefaultModel(&registry);
+  REQUIRE(model.has_value());
+
+  for (const auto& [id, module] : model->getModules()) {
+    if (module.descriptor->type == "oscillator") {
+      REQUIRE(model->apply(SetParameter{ id, "level", 0.1f }).has_value());
+    }
+  }
+
+  // Старый пресет хранит level 0.1 в файле и звучит так же тихо, как до D-083
+  const StereoBuffer audio = renderOffline(
+    { { .key = 60, .startFrame = 0, .endFrame = 4800 } },
+    { .frameCount = 4800, .preset = saveModel(*model) }
+  );
+
+  CHECK(peak(audio.left, 0, 4800) == doctest::Approx(0.0909f).epsilon(0.01));
 }
 
 TEST_CASE("Примеры пресетов из examples/ загружаются и звучат") {

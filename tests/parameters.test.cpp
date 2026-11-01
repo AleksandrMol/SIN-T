@@ -1175,8 +1175,10 @@ TEST_CASE("После смены пресета слоты ведут к его 
 
   const clap_id level = fixture.findSlot("G1 Oscillator 2 Level");
   const clap_event_note_t on = makeNote(CLAP_EVENT_NOTE_ON, KEY_A4);
+  const clap_event_param_value_t silent = makeValue(level, 0.0);
 
-  fixture.process(SMOOTHING_FRAMES * 2, { &on.header });
+  // Второй осциллятор сначала заглушён: проверка не зависит от значения level по умолчанию
+  fixture.process(SMOOTHING_FRAMES * 2, { &on.header, &silent.header });
 
   const float before = peak(fixture.process(4800));
   const clap_event_param_value_t full = makeValue(level, 1.0);
