@@ -204,19 +204,20 @@ R"RML(
   }
   #matrix-header .button { height: 24dp; line-height: 24dp; }
   #matrix-rows { flex: 1 1 auto; overflow: hidden auto; padding: 6dp 12dp; decorator: plate(sunken 12dp none); }
-  .route {
-    display: flex; flex-direction: row; align-items: center; height: 26dp; margin-bottom: 3dp;
-    border: 1dp #0a0c0f; border-radius: 3dp;
-    decorator:
-      linear-gradient(100deg, #ffffff00 0%, #ffffff10 22%, #ffffff00 44%, #00000014 60%, #ffffff00 76%) padding-box,
-      image(sint:brushed repeat) padding-box,
-      linear-gradient(180deg, #252a31 0%, #1b1f24 100%) padding-box,
-      linear-gradient(180deg, #5d6672 0%, #2a2f36 50%, #0d0f12 100%) border-box;
-  }
-  .route-source { flex: 0 0 150dp; padding-left: 8dp; color: #f0923a; white-space: nowrap; overflow: hidden; }
-  .route-target { flex: 1 1 auto; white-space: nowrap; overflow: hidden; }
+  /*
+    Строка — утопленные ячейки тёмного стекла на дне панели, как на референсе D-093.
+    Ширины не зависят от текста, иначе в узком окне столбцы в строках разъезжаются:
+    источник и ползунок сужаются вместе с панелью, остальное место у цели
+  */
+  .route { display: flex; flex-direction: row; align-items: center; height: 28dp; margin-bottom: 4dp; }
+  .route-cell { height: 100%; box-sizing: border-box; padding: 0 10dp; decorator: plate(display 3dp none); }
+  .route-source, .route-target { display: flex; flex-direction: row; align-items: center; }
+  .route-name { flex: 1 1 0dp; white-space: nowrap; overflow: hidden; }
+  .route-source { flex: 0 0 auto; width: 26%; min-width: 100dp; max-width: 160dp; color: #f0923a; }
+  .route-arrow { position: relative; top: -1dp; flex: 0 0 auto; margin-left: 6dp; font-size: 16dp; color: #66768a; }
+  .route-target { flex: 1 1 0dp; margin-left: 4dp; }
   .route-depth {
-    position: relative; flex: 0 0 160dp; height: 10dp; margin: 0 10dp;
+    position: relative; flex: 0 0 auto; width: 40%; max-width: 160dp; height: 10dp; margin-left: 10dp;
     background-color: #08090b; border-radius: 2dp;
     box-shadow: #2c3139 0dp 1dp 0dp 1dp, #000000 0dp 0dp 0dp 1dp;
     drag: drag; cursor: pointer;
@@ -227,7 +228,8 @@ R"RML(
     box-shadow: #3d8de840 0dp 0dp 4dp;
   }
   .route-center { position: absolute; left: 50%; top: 0; width: 1dp; height: 100%; background-color: #4c5361; pointer-events: none; }
-  .route-value { flex: 0 0 40dp; text-align: right; color: #c3cad5; }
+  .route-value { flex: 0 0 58dp; margin-left: 4dp; line-height: 28dp; text-align: right; color: #d6dbe3; }
+  .route > .block-button { margin-left: 6dp; }
   .matrix-empty { padding: 14dp 0; color: #4c5361; }
 
   #popup {
