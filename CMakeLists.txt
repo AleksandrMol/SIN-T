@@ -131,6 +131,7 @@ if(SINT_BUILD_GUI)
     gui/logoImage/logoImage.cpp
     gui/meshBuilder/meshBuilder.cpp
     gui/metalTextures/metalTextures.cpp
+    gui/plateDecorator/plateDecorator.cpp
     gui/rmlRuntime/rmlRuntime.cpp
     gui/wireGeometry/wireGeometry.cpp
     gui/wireLayer/wireLayer.cpp
@@ -259,6 +260,7 @@ if(SINT_BUILD_TESTS)
       tests/gui/logoImage.test.cpp
       tests/gui/meshBuilder.test.cpp
       tests/gui/metalTextures.test.cpp
+      tests/gui/plateDecorator.test.cpp
       tests/gui/viewUpdate.test.cpp
     )
     target_link_libraries(sint_gui_tests PRIVATE sint_gui_view sint_plugin_objects sint_no_editor doctest::doctest)

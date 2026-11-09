@@ -12,8 +12,9 @@ const char* const EDITOR_DOCUMENT = R"RML(
   body {
     width: 100%; height: 100%;
     display: flex; flex-direction: column;
-    background-color: #0f1216; color: #d6dbe3;
+    background-color: #07080a; color: #d6dbe3;
     font-family: "Noto Sans"; font-size: 12dp;
+    padding: 4dp;
   }
 
   scrollbarvertical { width: 8dp; }
@@ -21,70 +22,46 @@ const char* const EDITOR_DOCUMENT = R"RML(
   scrollbarvertical sliderbar { background-color: #3a414c; border-radius: 4dp; min-height: 20dp; }
   scrollbarhorizontal { height: 0; }
 
-  #toolbar, #nav {
-    display: flex; flex-direction: row; align-items: center;
-    flex: 0 0 auto; padding: 0 10dp;
-  }
   /*
-    Металл выпуклой пластины — три слоя, первый рисуется сверху:
-    блик полосами, основной тон, кромка. Кромка закрашивает всю пластину вместе с рамкой,
-    два верхних слоя закрывают всё, кроме рамки, и от кромки остаётся градиентная рамка.
-    Свет падает сверху слева. Внутренняя тень (inset) рисуется под слоями,
-    поэтому у углублённых панелей тон задан фоном, а слои полупрозрачные.
+    Пластины металла рисует свой декоратор plate(вид срез детали) (plateDecorator.h): срезанные углы,
+    фаска, текстура и винты. Тёмный фон окна между пластинами — швы, как на референсе D-093.
+    Свет падает сверху слева
   */
-  #toolbar {
-    height: 44dp;
-    border-top: 1dp #000000;
-    decorator:
-      linear-gradient(100deg, #ffffff00 0%, #ffffff16 16%, #ffffff00 32%, #00000018 46%, #ffffff00 56%, #ffffff10 72%, #ffffff00 88%) padding-box,
-      image(sint:worn repeat) padding-box,
-      linear-gradient(180deg, #3b424c 0%, #2a2e35 55%, #1e2127 100%) padding-box,
-      linear-gradient(90deg, #a3aebd 0%, #5d6672 35%, #3a414b 100%) border-box;
+  #toolbar { display: flex; flex-direction: row; flex: 0 0 44dp; }
+  .toolbar-plate {
+    display: flex; flex-direction: row; align-items: center;
+    margin-right: 4dp; padding: 0 10dp;
+    decorator: plate(frame 8dp none);
   }
-  #nav {
-    height: 32dp;
-    background-color: #181b20;
-    decorator: linear-gradient(180deg, #ffffff06 0%, #00000020 100%), image(sint:scuffed repeat);
-    border-top: 1dp #07080a; border-bottom: 1dp #07080a;
-    box-shadow: #ffffff12 0dp 1dp 0dp inset;
+  #logo-plate { padding: 0 16dp; decorator: plate(frame 8dp screws); }
+  #toolbar-filler { flex: 1 1 auto; margin-right: 0; }
+
+  #nav { display: flex; flex-direction: row; align-items: center; flex: 0 0 32dp; margin-top: 4dp; }
+  #nav-plate {
+    display: flex; flex-direction: row; align-items: center; flex: 1 1 auto; height: 100%;
+    margin-right: 4dp; padding: 0 14dp;
+    decorator: plate(panel 8dp none);
   }
+  #nav > .button { height: 100%; line-height: 30dp; margin-left: 0; padding: 0 14dp; }
+
   /* Размер — LOGO_WIDTH_DP и LOGO_HEIGHT_DP из logoImage.h, картинка рисуется кодом (D-095) */
-  #logo { width: 85dp; height: 26dp; margin-right: 18dp; decorator: image(sint:logo contain); }
+  #logo { width: 85dp; height: 26dp; decorator: image(sint:logo contain); }
   .gap { flex: 1 1 auto; }
 
   .button {
-    height: 24dp; line-height: 22dp; padding: 0 12dp; margin-left: 6dp; box-sizing: border-box;
-    border: 1dp #0d0f12; border-radius: 3dp;
-    decorator:
-      linear-gradient(180deg, #ffffff14 0%, #ffffff04 48%, #ffffff00 52%, #ffffff06 100%) padding-box,
-      linear-gradient(180deg, #4a525d 0%, #2c3138 100%) padding-box,
-      linear-gradient(180deg, #a3aebd 0%, #4d5561 45%, #121417 100%) border-box;
-    box-shadow: #00000090 0dp 1dp 2dp;
-    color: #d6dbe3; cursor: pointer;
+    height: 26dp; line-height: 26dp; padding: 0 12dp; margin-left: 6dp; box-sizing: border-box;
+    decorator: plate(button 3dp none);
+    color: #d6dbe3; cursor: pointer; font-effect: shadow(0dp 1dp #000000a0);
   }
-  .button:hover {
-    decorator:
-      linear-gradient(180deg, #ffffff1c 0%, #ffffff06 48%, #ffffff00 52%, #ffffff08 100%) padding-box,
-      linear-gradient(180deg, #56606c 0%, #343a42 100%) padding-box,
-      linear-gradient(180deg, #c0cad6 0%, #5a636f 45%, #15181c 100%) border-box;
-    color: #ffffff;
-  }
-  .button:active {
-    decorator:
-      linear-gradient(180deg, #00000030 0%, #ffffff00 50%, #ffffff10 100%) padding-box,
-      linear-gradient(180deg, #1d4b86 0%, #2b68b3 100%) padding-box,
-      linear-gradient(180deg, #0a1a30 0%, #23548f 55%, #7fb2ec 100%) border-box;
-    color: #ffffff;
-  }
+  .button:hover { decorator: plate(button-hover 3dp none); color: #ffffff; }
+  .button:active { decorator: plate(button-active 3dp none); color: #ffffff; }
+  .toolbar-plate .button:first-child { margin-left: 0; }
   #preset-button {
-    min-width: 200dp; margin-left: 0;
-    background-color: #0b0e12;
-    decorator: linear-gradient(170deg, #ffffff0a 0%, #ffffff00 60%);
-    border: 1dp #000000; border-bottom-color: #58616e; border-right-color: #2c3138;
-    box-shadow: #000000d0 0dp 2dp 4dp inset;
-    color: #9fc4f5;
+    min-width: 200dp; margin-left: 0; padding: 0 10dp;
+    decorator: plate(display 3dp none);
+    color: #9fc4f5; font-effect: none;
   }
-  #preset-button:hover { background-color: #11151b; }
+  #preset-button:hover { color: #c4dcfa; }
 
   #breadcrumbs { display: flex; flex-direction: row; align-items: center; }
   .crumb { color: #7f8896; cursor: pointer; }
@@ -95,11 +72,21 @@ const char* const EDITOR_DOCUMENT = R"RML(
   #sources { display: flex; flex-direction: row; align-items: center; margin-left: 24dp; }
   .source { position: relative; padding-right: 18dp; color: #f0923a; }
 
+  /*
+    Базовый размер 0 у рамы и холста: высоту даёт flex-grow, а с auto RmlUi раскладывал бы
+    все блоки холста ради измерения на каждом уровне вложенности
+  */
+  #screen {
+    display: flex; flex-direction: column; flex: 1 1 0dp; margin-top: 4dp; padding: 6dp;
+    decorator: plate(frame 10dp none);
+  }
   #canvas {
-    position: relative; flex: 1 1 auto; overflow: hidden; clip: always;
+    position: relative; flex: 1 1 0dp; overflow: hidden; clip: always;
     background-color: #0e1116; drag: drag;
-    decorator: radial-gradient(circle farthest-corner at 50% 40%, #28405c1c 0%, #00000000 55%, #00000070 100%);
-    box-shadow: #000000e0 0dp 3dp 8dp inset;
+    decorator:
+      plate(bare 0dp gussets),
+      radial-gradient(circle farthest-corner at 50% 40%, #28405c1c 0%, #00000000 55%, #00000070 100%);
+    box-shadow: #000000e0 0dp 3dp 8dp inset, #000000 0dp 0dp 0dp 1dp;
   }
   #world { position: absolute; left: 0; top: 0; width: 1dp; height: 1dp; }
   #wires { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
@@ -184,31 +171,24 @@ R"RML(
     background-color: #e0566c; color: #0f1216; border-radius: 10dp; cursor: pointer; z-index: 10;
   }
 
-  #bottom {
-    display: flex; flex-direction: row; flex: 0 0 188dp; padding: 6dp;
-    border-top: 1dp #000000;
-    decorator:
-      linear-gradient(100deg, #ffffff00 0%, #ffffff14 18%, #ffffff00 34%, #00000018 48%, #ffffff00 58%, #ffffff0e 74%, #ffffff00 90%) padding-box,
-      image(sint:worn repeat) padding-box,
-      linear-gradient(180deg, #2c3138 0%, #1d2025 100%) padding-box,
-      linear-gradient(90deg, #a3aebd 0%, #5d6672 35%, #3a414b 100%) border-box;
-  }
-  #macros, #matrix {
-    background-color: #14171b;
-    decorator: linear-gradient(180deg, #00000030 0%, #ffffff05 100%), image(sint:scuffed repeat);
-    border: 1dp #07080a; border-bottom-color: #4f5864; border-right-color: #353b44; border-radius: 4dp;
-    box-shadow: #000000c0 0dp 3dp 7dp inset;
-  }
-  #macros { flex: 0 0 256dp; padding: 6dp; margin-right: 6dp; }
+  /* Рама с винтами в углах, внутри утопленная пластина: её срезанные углы оставляют место винтам рамы */
+  #bottom { display: flex; flex-direction: row; flex: 0 0 196dp; margin-top: 4dp; }
+  #macros, #matrix { display: flex; flex-direction: column; padding: 10dp; decorator: plate(frame 8dp screws); }
+  #macros { flex: 0 0 282dp; margin-right: 4dp; }
+  #macros-well { flex: 1 1 auto; padding: 4dp 9dp; decorator: plate(sunken 12dp none); }
   .panel-title { color: #aeb8c6; height: 20dp; line-height: 20dp; font-effect: shadow(0dp 1dp #000000c0); }
   #matrix-header .panel-title { color: #6fa8ec; font-size: 14dp; }
   #macro-cells { display: flex; flex-direction: row; flex-wrap: wrap; }
   #macro-cells .knob-cell { width: 61dp; height: 74dp; }
   #macro-cells .port { right: 2dp; top: 22dp; }
 
-  #matrix { flex: 1 1 auto; display: flex; flex-direction: column; padding: 6dp 0 6dp 10dp; }
-  #matrix-header { display: flex; flex-direction: row; align-items: center; flex: 0 0 26dp; padding-right: 10dp; }
-  #matrix-rows { flex: 1 1 auto; overflow: hidden auto; padding-right: 10dp; }
+  #matrix { flex: 1 1 auto; }
+  #matrix-header {
+    display: flex; flex-direction: row; align-items: center; flex: 0 0 32dp; margin-bottom: 4dp; padding: 0 12dp 0 16dp;
+    decorator: plate(panel 12dp none);
+  }
+  #matrix-header .button { height: 24dp; line-height: 24dp; }
+  #matrix-rows { flex: 1 1 auto; overflow: hidden auto; padding: 6dp 12dp; decorator: plate(sunken 12dp none); }
   .route {
     display: flex; flex-direction: row; align-items: center; height: 26dp; margin-bottom: 3dp;
     border: 1dp #0a0c0f; border-radius: 3dp;
@@ -237,11 +217,8 @@ R"RML(
 
   #popup {
     position: absolute; min-width: 180dp; max-height: 320dp; overflow: hidden auto; padding: 4dp;
-    border: 1dp #0a0c0f; border-radius: 4dp; z-index: 30;
-    decorator:
-      image(sint:brushed repeat) padding-box,
-      linear-gradient(180deg, #2e333b 0%, #1f2329 100%) padding-box,
-      linear-gradient(135deg, #a3aebd 0%, #4d5561 25%, #15181c 100%) border-box;
+    z-index: 30;
+    decorator: plate(panel 6dp none);
     box-shadow: #000000c0 0dp 6dp 16dp;
   }
   .menu-item { height: 24dp; line-height: 24dp; padding: 0 10dp; white-space: nowrap; border-radius: 3dp; cursor: pointer; }
@@ -249,13 +226,9 @@ R"RML(
   .menu-heading { height: 22dp; line-height: 22dp; padding: 0 10dp; color: #7f8896; }
 
   #prompt {
-    position: absolute; left: 50%; top: 120dp; width: 320dp; margin-left: -160dp; padding: 12dp;
-    border: 1dp #0a0c0f; border-radius: 4dp; z-index: 40;
-    decorator:
-      linear-gradient(115deg, #ffffff00 10%, #ffffff0c 30%, #ffffff00 50%) padding-box,
-      image(sint:brushed repeat) padding-box,
-      linear-gradient(180deg, #2e333b 0%, #1f2329 100%) padding-box,
-      linear-gradient(135deg, #a3aebd 0%, #4d5561 25%, #15181c 100%) border-box;
+    position: absolute; left: 50%; top: 120dp; width: 340dp; margin-left: -170dp; padding: 16dp 26dp;
+    z-index: 40;
+    decorator: plate(panel 10dp screws);
     box-shadow: #000000c0 0dp 8dp 20dp;
   }
   #prompt-label { margin-bottom: 8dp; }
@@ -279,27 +252,34 @@ R"RML(
 </head>
 <body>
   <div id="toolbar">
-    <div id="logo"></div>
-    <div id="preset-button" class="button" data-action="presets"></div>
-    <div class="button" data-action="save">Save</div>
-    <div class="button" data-action="save-as">Save as</div>
-    <div class="gap"></div>
+    <div id="logo-plate" class="toolbar-plate"><div id="logo"></div></div>
+    <div class="toolbar-plate"><div id="preset-button" class="button" data-action="presets"></div></div>
+    <div class="toolbar-plate">
+      <div class="button" data-action="save">Save</div>
+      <div class="button" data-action="save-as">Save as</div>
+    </div>
+    <div id="toolbar-filler" class="toolbar-plate"></div>
   </div>
   <div id="nav">
-    <div id="breadcrumbs"></div>
-    <div id="sources"></div>
-    <div class="gap"></div>
+    <div id="nav-plate">
+      <div id="breadcrumbs"></div>
+      <div id="sources"></div>
+    </div>
     <div class="button" data-action="add-module">+ Add module</div>
   </div>
-  <div id="canvas" data-drag="canvas">
-    <div id="world"></div>
-    <wire-layer id="wires"></wire-layer>
-    <div id="wire-remove" class="hidden" data-action="remove-wire">×</div>
+  <div id="screen">
+    <div id="canvas" data-drag="canvas">
+      <div id="world"></div>
+      <wire-layer id="wires"></wire-layer>
+      <div id="wire-remove" class="hidden" data-action="remove-wire">×</div>
+    </div>
   </div>
   <div id="bottom">
     <div id="macros">
-      <div class="panel-title">Macros</div>
-      <div id="macro-cells"></div>
+      <div id="macros-well">
+        <div class="panel-title">Macros</div>
+        <div id="macro-cells"></div>
+      </div>
     </div>
     <div id="matrix">
       <div id="matrix-header">

@@ -19,14 +19,14 @@ namespace {
   }
 }
 
-MeshBuilder::MeshBuilder(float opacity) : opacity(opacity) {}
+MeshBuilder::MeshBuilder(float opacity, Rml::Vector2f textureScale) : opacity(opacity), textureScale(textureScale) {}
 
 int MeshBuilder::addVertex(Rml::Vector2f position, Rml::Colourb color, float alpha) {
   Rml::Vertex vertex;
 
   vertex.position = position;
   vertex.colour = color.ToPremultiplied(alpha * this->opacity);
-  vertex.tex_coord = Rml::Vector2f(0.0f, 0.0f);
+  vertex.tex_coord = Rml::Vector2f(position.x * this->textureScale.x, position.y * this->textureScale.y);
   this->mesh.vertices.push_back(vertex);
 
   return (int)this->mesh.vertices.size() - 1;
@@ -131,6 +131,22 @@ void MeshBuilder::addRing(const Ring& ring, std::span<const Rml::Colourb> innerC
 
       this->mesh.indices.insert(this->mesh.indices.end(), { current, next, current + 1, current + 1, next, next + 1 });
     }
+  }
+}
+
+void MeshBuilder::addConvexPolygon(std::span<const Rml::Vector2f> points, std::span<const Rml::Colourb> colors) {
+  if (points.size() < 3 || colors.empty()) {
+    return;
+  }
+
+  const int first = (int)this->mesh.vertices.size();
+
+  for (size_t index = 0; index < points.size(); index++) {
+    this->addVertex(points[index], colors[std::min(index, colors.size() - 1)], 1.0f);
+  }
+
+  for (int index = 1; index + 1 < (int)points.size(); index++) {
+    this->mesh.indices.insert(this->mesh.indices.end(), { first, first + index, first + index + 1 });
   }
 }
 

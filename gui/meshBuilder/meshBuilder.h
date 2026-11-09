@@ -12,9 +12,11 @@
 class MeshBuilder {
   public:
     /**
-     * Прозрачность CSS к своей сетке не применяется, поэтому элемент передаёт её сам
+     * Прозрачность CSS к своей сетке не применяется, поэтому элемент передаёт её сам.
+     * textureScale переводит положение вершины в координаты текстуры, как background-repeat от угла элемента:
+     * для плитки в N пикселей это 1/N. Ноль — сетка без текстуры
      */
-    explicit MeshBuilder(float opacity = 1.0f);
+    explicit MeshBuilder(float opacity = 1.0f, Rml::Vector2f textureScale = Rml::Vector2f(0.0f, 0.0f));
 
     /**
      * Линия через точки. Край на 1 пиксель уходит в прозрачность, поэтому она сглажена
@@ -52,11 +54,18 @@ class MeshBuilder {
      */
     void addRing(const Ring& ring, std::span<const Rml::Colourb> innerColors, std::span<const Rml::Colourb> outerColors);
 
+    /**
+     * Выпуклый многоугольник веером от первой точки, цвет в каждой вершине: внутри он плавно смешивается.
+     * Цветов либо один на всё, либо столько же, сколько точек. Край не сглажен: соседние куски стыкуются без щели
+     */
+    void addConvexPolygon(std::span<const Rml::Vector2f> points, std::span<const Rml::Colourb> colors);
+
     Rml::Mesh takeMesh();
 
   private:
     Rml::Mesh mesh;
     float opacity;
+    Rml::Vector2f textureScale;
 
     int addVertex(Rml::Vector2f position, Rml::Colourb color, float alpha);
 };

@@ -2,7 +2,10 @@
 
 #include <RmlUi/Core.h>
 
+#include <memory>
+
 #include "../knob/knob.h"
+#include "../plateDecorator/plateDecorator.h"
 #include "../wireLayer/wireLayer.h"
 
 extern const unsigned char embeddedFont[];
@@ -13,6 +16,8 @@ namespace {
     int users = 0;
     Rml::ElementInstancerGeneric<Knob> knobInstancer;
     Rml::ElementInstancerGeneric<WireLayer> wireInstancer;
+    // Разборщики свойств появляются только в Rml::Initialise, поэтому декоратор создаётся после неё
+    std::unique_ptr<PlateDecoratorInstancer> plateInstancer;
   };
 
   RmlRuntime& getRuntime() {
@@ -31,6 +36,8 @@ void acquireRmlRuntime() {
   Rml::Initialise();
   Rml::Factory::RegisterElementInstancer("knob", &runtime.knobInstancer);
   Rml::Factory::RegisterElementInstancer("wire-layer", &runtime.wireInstancer);
+  runtime.plateInstancer = std::make_unique<PlateDecoratorInstancer>();
+  Rml::Factory::RegisterDecoratorInstancer("plate", runtime.plateInstancer.get());
   Rml::LoadFontFace(Rml::Span<const Rml::byte>(embeddedFont, embeddedFontSize), "Noto Sans", Rml::Style::FontStyle::Normal, Rml::Style::FontWeight::Normal);
 }
 
@@ -39,5 +46,6 @@ void releaseRmlRuntime() {
 
   if (--runtime.users == 0) {
     Rml::Shutdown();
+    runtime.plateInstancer.reset();
   }
 }
