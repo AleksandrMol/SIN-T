@@ -4,6 +4,7 @@
 #include <RmlUi/Core/ElementText.h>
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <random>
 #include <ranges>
@@ -729,4 +730,54 @@ TEST_CASE_FIXTURE(ViewUpdateFixture, "Новый провод с нулевым�
   this->checkWireMesh();
 
   CHECK_FALSE(this->wires()->getMesh().vertices.empty());
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Под проводом тёмная подложка шире него, сначала подложка, потом провод") {
+  Rml::Element* start = this->addPoint(100, 300);
+  Rml::Element* end = this->addPoint(900, 300);
+
+  for (const WIRE_KIND kind : { WIRE_KIND::AUDIO, WIRE_KIND::MODULATION }) {
+    CAPTURE((int)kind);
+    this->wires()->setWires({ { start, end, kind } });
+    this->render();
+
+    const Rml::Mesh& mesh = this->wires()->getMesh();
+    float darkReach = 0.0f;
+    float colorReach = 0.0f;
+    size_t firstDark = mesh.vertices.size();
+    size_t firstColor = mesh.vertices.size();
+
+    // Только середина провода: у стрелки своя форма
+    for (size_t index = 0; index < mesh.vertices.size(); index++) {
+      const Rml::Vertex& vertex = mesh.vertices[index];
+
+      if (vertex.colour.alpha == 0 || vertex.position.x < 200.0f || vertex.position.x > 700.0f) {
+        continue;
+      }
+
+      const float reach = std::fabs(vertex.position.y - 300.0f);
+      const bool isDark = vertex.colour.red == 0 && vertex.colour.green == 0 && vertex.colour.blue == 0;
+
+      if (isDark) {
+        darkReach = std::max(darkReach, reach);
+        firstDark = std::min(firstDark, index);
+      } else {
+        colorReach = std::max(colorReach, reach);
+        firstColor = std::min(firstColor, index);
+      }
+    }
+
+    REQUIRE(firstColor < mesh.vertices.size());
+    REQUIRE(firstDark < mesh.vertices.size());
+    CHECK(darkReach >= colorReach + 1.0f);
+    // Вершины рисуются по порядку: подложка раньше, иначе она закрыла бы провод
+    CHECK(firstDark < firstColor);
+  }
+}
+
+TEST_CASE_FIXTURE(ViewUpdateFixture, "Гнездо порта лежит над проводами: провод уходит под оправу") {
+  REQUIRE(this->count(".port") > 0);
+  CHECK(this->get(".port")->GetZIndex() > this->wires()->GetZIndex());
+  // Тянущийся провод и меню остаются над портами
+  CHECK(this->get(".port")->GetZIndex() < this->draft()->GetZIndex());
 }

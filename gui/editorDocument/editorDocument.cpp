@@ -164,18 +164,37 @@ R"RML(
   }
   .knob-mark.unexported { left: 8dp; right: auto; background-color: #e0566c; }
 
+  /*
+    Порт — гнездо в металле (D-100): оправа с фаской, свет сверху слева, внутри цветной сердечник.
+    Форма различает виды без цвета: аудио круглое, модуляция квадратная.
+    Гнездо лежит над слоем проводов: провод уходит под оправу, как штекер
+  */
   .port {
-    position: absolute; width: 14dp; height: 14dp; border-radius: 7dp;
-    box-shadow: #0a0c0f 0dp 0dp 0dp 2dp, #00000080 0dp 2dp 3dp 2dp;
-    drag: drag-drop; cursor: pointer;
+    position: absolute; width: 14dp; height: 14dp; box-sizing: border-box; border: 2dp #2a2f36; border-radius: 7dp;
+    box-shadow: #000000 0dp 0dp 0dp 1dp, #00000090 0dp 2dp 3dp 1dp;
+    drag: drag-drop; cursor: pointer; z-index: 6;
   }
-  .port.audio { decorator: radial-gradient(circle farthest-corner at 35% 30%, #a8cffa 0%, #4f9cf2 45%, #1d5aa6 100%); }
+  .port.audio {
+    decorator:
+      radial-gradient(circle farthest-corner at 35% 30%, #a8cffa 0%, #4f9cf2 45%, #1d5aa6 100%) padding-box,
+      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+  }
   .port.modulation {
     border-radius: 3dp;
-    decorator: radial-gradient(circle farthest-corner at 35% 30%, #ffd2a0 0%, #f39a45 45%, #a85a17 100%);
+    decorator:
+      radial-gradient(circle farthest-corner at 35% 30%, #ffd2a0 0%, #f39a45 45%, #a85a17 100%) padding-box,
+      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
   }
-  .port:hover { decorator: none; background-color: #ffffff; }
-  .port.legal { decorator: radial-gradient(circle farthest-corner at 35% 30%, #eaffde 0%, #8ee07a 40%, #3f9233 100%); }
+  .port:hover {
+    decorator:
+      radial-gradient(circle farthest-corner at 35% 30%, #ffffff 0%, #e8eef6 50%, #a9b4c2 100%) padding-box,
+      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+  }
+  .port.legal {
+    decorator:
+      radial-gradient(circle farthest-corner at 35% 30%, #eaffde 0%, #8ee07a 40%, #3f9233 100%) padding-box,
+      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+  }
   .port.input { left: -8dp; }
   .port.output { right: -8dp; }
   .port-label { position: absolute; right: 12dp; color: #f0923a; font-size: 10dp; pointer-events: none; }
