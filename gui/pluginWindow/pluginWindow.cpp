@@ -180,8 +180,10 @@ struct PluginWindow::Implementation {
     }
 
     this->context->Update();
-    this->renderer->BeginFrame();
+    // Clear до BeginFrame, как в бэкендах RmlUi: Clear оставляет цвет очистки непрозрачным,
+    // а BeginFrame возвращает прозрачный. Иначе слои для box-shadow и фильтров заливаются чёрным
     this->renderer->Clear();
+    this->renderer->BeginFrame();
     this->context->Render();
     this->renderer->EndFrame();
     this->isDirty = false;

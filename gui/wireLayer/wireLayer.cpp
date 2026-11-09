@@ -9,8 +9,8 @@
 #include "../meshBuilder/meshBuilder.h"
 
 namespace {
-  const Rml::Colourb AUDIO_COLOR(122, 162, 247);
-  const Rml::Colourb MODULATION_COLOR(255, 158, 100);
+  const Rml::Colourb AUDIO_COLOR(61, 141, 232);
+  const Rml::Colourb MODULATION_COLOR(240, 146, 58);
   const Rml::Colourb SELECTED_COLOR(255, 255, 255);
 
   constexpr float DASH_LENGTH = 7.0f;

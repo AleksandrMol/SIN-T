@@ -10,10 +10,10 @@ namespace {
   constexpr float SWEEP = 1.5f * std::numbers::pi_v<float>;
   constexpr float START_ANGLE = 0.75f * std::numbers::pi_v<float>;
 
-  const Rml::Colourb TRACK_COLOR(64, 70, 86);
-  const Rml::Colourb VALUE_COLOR(122, 162, 247);
-  const Rml::Colourb POINTER_COLOR(230, 232, 236);
-  const Rml::Colourb MODULATION_COLOR(255, 158, 100);
+  const Rml::Colourb TRACK_COLOR(11, 13, 16);
+  const Rml::Colourb VALUE_COLOR(61, 141, 232);
+  const Rml::Colourb POINTER_COLOR(226, 230, 236);
+  const Rml::Colourb MODULATION_COLOR(240, 146, 58);
 
   float toAngle(float position) {
     return START_ANGLE + std::clamp(position, 0.0f, 1.0f) * SWEEP;
