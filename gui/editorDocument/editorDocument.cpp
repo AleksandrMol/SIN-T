@@ -74,11 +74,13 @@ const char* const EDITOR_DOCUMENT = R"RML(
 
   /*
     Базовый размер 0 у рамы и холста: высоту даёт flex-grow, а с auto RmlUi раскладывал бы
-    все блоки холста ради измерения на каждом уровне вложенности
+    все блоки холста ради измерения на каждом уровне вложенности.
+    Холст прямоугольный, поэтому срез рамы не больше отступа·(2 − √2): иначе в углу рама
+    становится тоньше, чем по сторонам, и угол холста с косынкой выглядывает из среза
   */
   #screen {
-    display: flex; flex-direction: column; flex: 1 1 0dp; margin-top: 4dp; padding: 6dp;
-    decorator: plate(frame 10dp none);
+    display: flex; flex-direction: column; flex: 1 1 0dp; margin-top: 4dp; padding: 7dp;
+    decorator: plate(frame 4dp none);
   }
   #canvas {
     position: relative; flex: 1 1 0dp; overflow: hidden; clip: always;
