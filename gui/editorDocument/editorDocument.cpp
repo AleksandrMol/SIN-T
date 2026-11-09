@@ -85,10 +85,23 @@ const char* const EDITOR_DOCUMENT = R"RML(
   #canvas {
     position: relative; flex: 1 1 0dp; overflow: hidden; clip: always;
     background-color: #0e1116; drag: drag;
+    box-shadow: #000000 0dp 0dp 0dp 1dp;
+  }
+  /*
+    Сетка едет вместе со схемой, как background-position: слой больше холста на период рисунка
+    (отступ справа и снизу — GRID_PERIOD_DP из gridDecorator.h), редактор сдвигает его на остаток от прокрутки.
+    Тень, виньетка и косынки лежат над сеткой: экран утоплен в раму, а линии уходят под её край
+  */
+  #grid {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%; padding: 0 72dp 72dp 0;
+    pointer-events: none; decorator: grid();
+  }
+  #canvas-shade {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;
     decorator:
       plate(bare 0dp gussets),
       radial-gradient(circle farthest-corner at 50% 40%, #28405c1c 0%, #00000000 55%, #00000070 100%);
-    box-shadow: #000000e0 0dp 3dp 8dp inset, #000000 0dp 0dp 0dp 1dp;
+    box-shadow: #000000e0 0dp 3dp 8dp inset;
   }
   #world { position: absolute; left: 0; top: 0; width: 1dp; height: 1dp; }
   #wires { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
@@ -271,6 +284,8 @@ R"RML(
   </div>
   <div id="screen">
     <div id="canvas" data-drag="canvas">
+      <div id="grid"></div>
+      <div id="canvas-shade"></div>
       <div id="world"></div>
       <wire-layer id="wires"></wire-layer>
       <div id="wire-remove" class="hidden" data-action="remove-wire">×</div>

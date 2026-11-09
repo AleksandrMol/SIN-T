@@ -127,6 +127,7 @@ if(SINT_BUILD_GUI)
     gui/editorView/editorView.cpp
     gui/elementTools/elementTools.cpp
     gui/graphLayout/graphLayout.cpp
+    gui/gridDecorator/gridDecorator.cpp
     gui/knob/knob.cpp
     gui/logoImage/logoImage.cpp
     gui/meshBuilder/meshBuilder.cpp
@@ -257,6 +258,7 @@ if(SINT_BUILD_TESTS)
     add_executable(sint_gui_tests
       tests/gui/main.cpp
       tests/gui/editor.test.cpp
+      tests/gui/gridDecorator.test.cpp
       tests/gui/logoImage.test.cpp
       tests/gui/meshBuilder.test.cpp
       tests/gui/metalTextures.test.cpp
