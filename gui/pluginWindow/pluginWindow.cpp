@@ -15,6 +15,7 @@
 #include "../editorBackend/editorBackend.h"
 #include "../editorDocument/editorDocument.h"
 #include "../editorView/editorView.h"
+#include "../logoImage/logoImage.h"
 #include "../metalTextures/metalTextures.h"
 #include "../rmlRuntime/rmlRuntime.h"
 
@@ -91,13 +92,19 @@ namespace {
   }
 
   /**
-   * Рендерер RmlUi, который отдаёт текстуры металла по именам sint:... из стилей.
+   * Рендерер RmlUi, который отдаёт текстуры металла и логотип по именам sint:... из стилей.
    * Остальные картинки грузит как обычно
    */
   class EditorRenderer final : public RenderInterface_GL3 {
     public:
       Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) override {
-        if (const TextureImage* image = findMetalTexture(source)) {
+        const TextureImage* image = findMetalTexture(source);
+
+        if (!image) {
+          image = findLogoImage(source);
+        }
+
+        if (image) {
           dimensions = Rml::Vector2i(image->width, image->height);
 
           return this->GenerateTexture(image->pixels, dimensions);

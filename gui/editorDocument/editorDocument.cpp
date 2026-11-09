@@ -48,10 +48,8 @@ const char* const EDITOR_DOCUMENT = R"RML(
     border-top: 1dp #07080a; border-bottom: 1dp #07080a;
     box-shadow: #ffffff12 0dp 1dp 0dp inset;
   }
-  #logo {
-    font-size: 20dp; color: #c4cedb; margin-right: 18dp;
-    font-effect: shadow(0dp 1dp #000000c0);
-  }
+  /* Размер — LOGO_WIDTH_DP и LOGO_HEIGHT_DP из logoImage.h, картинка рисуется кодом (D-095) */
+  #logo { width: 85dp; height: 26dp; margin-right: 18dp; decorator: image(sint:logo contain); }
   .gap { flex: 1 1 auto; }
 
   .button {
@@ -281,7 +279,7 @@ R"RML(
 </head>
 <body>
   <div id="toolbar">
-    <div id="logo">SIN-T</div>
+    <div id="logo"></div>
     <div id="preset-button" class="button" data-action="presets"></div>
     <div class="button" data-action="save">Save</div>
     <div class="button" data-action="save-as">Save as</div>

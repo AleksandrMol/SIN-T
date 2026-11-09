@@ -128,6 +128,7 @@ if(SINT_BUILD_GUI)
     gui/elementTools/elementTools.cpp
     gui/graphLayout/graphLayout.cpp
     gui/knob/knob.cpp
+    gui/logoImage/logoImage.cpp
     gui/meshBuilder/meshBuilder.cpp
     gui/metalTextures/metalTextures.cpp
     gui/rmlRuntime/rmlRuntime.cpp
@@ -255,6 +256,7 @@ if(SINT_BUILD_TESTS)
     add_executable(sint_gui_tests
       tests/gui/main.cpp
       tests/gui/editor.test.cpp
+      tests/gui/logoImage.test.cpp
       tests/gui/meshBuilder.test.cpp
       tests/gui/metalTextures.test.cpp
       tests/gui/viewUpdate.test.cpp

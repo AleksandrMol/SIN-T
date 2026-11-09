@@ -1,18 +1,8 @@
 #pragma once
 
-#include <RmlUi/Core/Types.h>
-
 #include <string_view>
-#include <vector>
 
-/**
- * Готовая картинка: RGBA с предумноженной прозрачностью, как её ждёт RmlUi
- */
-struct TextureImage {
-  int width = 0;
-  int height = 0;
-  std::vector<Rml::byte> pixels;
-};
+#include "../textureImage/textureImage.h"
 
 /**
  * Текстуры металла считаются кодом, а не читаются из файлов: плагину не нужны ни файлы рядом, ни декодер PNG.
