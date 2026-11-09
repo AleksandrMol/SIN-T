@@ -37,13 +37,14 @@ const char* const EDITOR_DOCUMENT = R"RML(
     border-top: 1dp #000000;
     decorator:
       linear-gradient(100deg, #ffffff00 0%, #ffffff16 16%, #ffffff00 32%, #00000018 46%, #ffffff00 56%, #ffffff10 72%, #ffffff00 88%) padding-box,
+      image(sint:worn repeat) padding-box,
       linear-gradient(180deg, #3b424c 0%, #2a2e35 55%, #1e2127 100%) padding-box,
       linear-gradient(90deg, #a3aebd 0%, #5d6672 35%, #3a414b 100%) border-box;
   }
   #nav {
     height: 32dp;
     background-color: #181b20;
-    decorator: linear-gradient(180deg, #ffffff06 0%, #00000020 100%);
+    decorator: linear-gradient(180deg, #ffffff06 0%, #00000020 100%), image(sint:scuffed repeat);
     border-top: 1dp #07080a; border-bottom: 1dp #07080a;
     box-shadow: #ffffff12 0dp 1dp 0dp inset;
   }
@@ -111,6 +112,7 @@ const char* const EDITOR_DOCUMENT = R"RML(
     border: 1dp #0b0d10; border-radius: 4dp; drag: drag;
     decorator:
       linear-gradient(115deg, #ffffff00 10%, #ffffff16 26%, #ffffff00 42%, #00000018 56%, #ffffff00 66%, #ffffff0c 80%, #ffffff00 94%) padding-box,
+      image(sint:brushed repeat) padding-box,
       linear-gradient(180deg, #2e333b 0%, #23272e 45%, #1b1e23 100%) padding-box,
       linear-gradient(135deg, #d0d9e4 0%, #7d8795 15%, #474f5a 45%, #2a2f36 100%) border-box;
     box-shadow: #000000 0dp 0dp 0dp 1dp, #000000b0 0dp 4dp 10dp;
@@ -125,6 +127,7 @@ const char* const EDITOR_DOCUMENT = R"RML(
     height: 24dp; padding: 0 6dp 0 10dp;
     decorator:
       linear-gradient(100deg, #ffffff00 4%, #ffffff22 20%, #ffffff00 36%, #00000016 50%, #ffffff00 60%, #ffffff12 76%, #ffffff00 92%),
+      image(sint:brushed repeat),
       linear-gradient(180deg, #4a515c 0%, #363c45 50%, #2a2e35 100%);
     border-bottom: 1dp #0b0d10; border-radius: 3dp 3dp 0 0;
   }
@@ -188,12 +191,13 @@ R"RML(
     border-top: 1dp #000000;
     decorator:
       linear-gradient(100deg, #ffffff00 0%, #ffffff14 18%, #ffffff00 34%, #00000018 48%, #ffffff00 58%, #ffffff0e 74%, #ffffff00 90%) padding-box,
+      image(sint:worn repeat) padding-box,
       linear-gradient(180deg, #2c3138 0%, #1d2025 100%) padding-box,
       linear-gradient(90deg, #a3aebd 0%, #5d6672 35%, #3a414b 100%) border-box;
   }
   #macros, #matrix {
     background-color: #14171b;
-    decorator: linear-gradient(180deg, #00000030 0%, #ffffff05 100%);
+    decorator: linear-gradient(180deg, #00000030 0%, #ffffff05 100%), image(sint:scuffed repeat);
     border: 1dp #07080a; border-bottom-color: #4f5864; border-right-color: #353b44; border-radius: 4dp;
     box-shadow: #000000c0 0dp 3dp 7dp inset;
   }
@@ -212,6 +216,7 @@ R"RML(
     border: 1dp #0a0c0f; border-radius: 3dp;
     decorator:
       linear-gradient(100deg, #ffffff00 0%, #ffffff10 22%, #ffffff00 44%, #00000014 60%, #ffffff00 76%) padding-box,
+      image(sint:brushed repeat) padding-box,
       linear-gradient(180deg, #252a31 0%, #1b1f24 100%) padding-box,
       linear-gradient(180deg, #5d6672 0%, #2a2f36 50%, #0d0f12 100%) border-box;
   }
@@ -236,6 +241,7 @@ R"RML(
     position: absolute; min-width: 180dp; max-height: 320dp; overflow: hidden auto; padding: 4dp;
     border: 1dp #0a0c0f; border-radius: 4dp; z-index: 30;
     decorator:
+      image(sint:brushed repeat) padding-box,
       linear-gradient(180deg, #2e333b 0%, #1f2329 100%) padding-box,
       linear-gradient(135deg, #a3aebd 0%, #4d5561 25%, #15181c 100%) border-box;
     box-shadow: #000000c0 0dp 6dp 16dp;
@@ -249,6 +255,7 @@ R"RML(
     border: 1dp #0a0c0f; border-radius: 4dp; z-index: 40;
     decorator:
       linear-gradient(115deg, #ffffff00 10%, #ffffff0c 30%, #ffffff00 50%) padding-box,
+      image(sint:brushed repeat) padding-box,
       linear-gradient(180deg, #2e333b 0%, #1f2329 100%) padding-box,
       linear-gradient(135deg, #a3aebd 0%, #4d5561 25%, #15181c 100%) border-box;
     box-shadow: #000000c0 0dp 8dp 20dp;

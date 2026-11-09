@@ -129,6 +129,7 @@ if(SINT_BUILD_GUI)
     gui/graphLayout/graphLayout.cpp
     gui/knob/knob.cpp
     gui/meshBuilder/meshBuilder.cpp
+    gui/metalTextures/metalTextures.cpp
     gui/rmlRuntime/rmlRuntime.cpp
     gui/wireGeometry/wireGeometry.cpp
     gui/wireLayer/wireLayer.cpp
@@ -255,6 +256,7 @@ if(SINT_BUILD_TESTS)
       tests/gui/main.cpp
       tests/gui/editor.test.cpp
       tests/gui/meshBuilder.test.cpp
+      tests/gui/metalTextures.test.cpp
       tests/gui/viewUpdate.test.cpp
     )
     target_link_libraries(sint_gui_tests PRIVATE sint_gui_view sint_plugin_objects sint_no_editor doctest::doctest)
