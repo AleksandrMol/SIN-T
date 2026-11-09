@@ -169,3 +169,53 @@ TEST_CASE_FIXTURE(EditorFixture, "Пластины в стилях редакт�
     CHECK(decorators->list[0].instancer != nullptr);
   }
 }
+
+TEST_CASE_FIXTURE(EditorFixture, "Пластина не строится заново при том же размере, одинаковые элементы делят одну сетку") {
+  const std::string output = this->model().findModule(MACROS_MODULE_ID)->descriptor->modOutputs[2].key;
+
+  this->apply(AddRoute{ { { MACROS_MODULE_ID, output }, { this->findModule("filter"), "cutoff" }, 0.5f } });
+
+  Rml::ElementList sources;
+  Rml::ElementList values;
+
+  this->document->QuerySelectorAll(sources, ".route-source");
+  this->document->QuerySelectorAll(values, ".route-value");
+  REQUIRE(sources.size() == 2);
+  REQUIRE(values.size() == 2);
+
+  // Тот же исполнитель, что рисует ячейку: RmlUi хранит их в таблице стилей
+  const Rml::Property* property = sources[0]->GetProperty("decorator");
+
+  REQUIRE(property != nullptr);
+
+  const Rml::DecoratorPtrList& list = this->document->GetStyleSheet()->InstanceDecorators(*sources[0]->GetRenderManager(),
+    *property->Get<Rml::DecoratorsPtr>(), property->source.get());
+
+  REQUIRE(list.size() == 1);
+
+  const Rml::Decorator& decorator = *list[0];
+  const auto generate = [&decorator](Rml::Element* element) {
+    return decorator.GenerateElementData(element, Rml::BoxArea::Padding);
+  };
+
+  REQUIRE(sources[0]->GetBox().GetSize() == sources[1]->GetBox().GetSize());
+  REQUIRE(sources[0]->GetBox().GetSize() != values[0]->GetBox().GetSize());
+
+  const Rml::DecoratorDataHandle again = generate(sources[0]);
+  const Rml::DecoratorDataHandle twin = generate(sources[1]);
+  const Rml::DecoratorDataHandle other = generate(values[0]);
+
+  // Копия: у постоянной RmlUi нет определения, а проверка doctest берёт значение по ссылке
+  const Rml::DecoratorDataHandle invalid = Rml::Decorator::INVALID_DECORATORDATAHANDLE;
+
+  CHECK(again != invalid);
+  CHECK(twin == again);
+  CHECK(other != again);
+
+  // Отпускание держателя не отнимает сетку у тех, кто её ещё рисует
+  decorator.ReleaseElementData(again);
+  CHECK(generate(sources[1]) == twin);
+  decorator.ReleaseElementData(twin);
+  decorator.ReleaseElementData(twin);
+  decorator.ReleaseElementData(other);
+}

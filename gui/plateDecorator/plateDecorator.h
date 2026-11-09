@@ -33,6 +33,8 @@ struct PlateShape {
   float opacity = 1.0f;
   /** Перевод пикселей в координаты текстуры, ноль — без текстуры */
   Rml::Vector2f textureScale;
+
+  bool operator==(const PlateShape&) const = default;
 };
 
 /**

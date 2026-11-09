@@ -455,6 +455,11 @@ namespace {
     Rml::Geometry base;
     Rml::Geometry texture;
     Rml::Geometry top;
+    /** Геометрия живёт в своём окне: у каждого окна свой контекст OpenGL */
+    Rml::RenderManager* renderManager = nullptr;
+    PlateShape shape;
+    /** Сколько ссылок RmlUi держит на эти данные: элементы с той же формой делят одну сетку */
+    int users = 1;
   };
 
   class PlateDecorator final : public Rml::Decorator {
@@ -464,6 +469,13 @@ namespace {
         this->textureIndex = this->AddTexture(texture);
       }
 
+      /**
+       * RmlUi просит данные заново после каждой раскладки, в которой у элемента хоть раз менялся размер.
+       * Флекс раскладывает элементы сначала на пробу, потом окончательно, поэтому так бывает почти в каждом кадре
+       * с раскладкой, даже если итоговый размер прежний. Пластина тогда отдаёт уже построенную сетку:
+       * RmlUi освобождает старые данные после получения новых именно ради такого повтора.
+       * Сетка задана относительно угла элемента, поэтому одинаковые элементы, например ячейки матрицы, делят одну
+       */
       Rml::DecoratorDataHandle GenerateElementData(Rml::Element* element, Rml::BoxArea paintArea) const override {
         Rml::RenderManager* renderManager = element->GetRenderManager();
 
@@ -484,26 +496,47 @@ namespace {
           }
         }
 
-        PlateMeshes meshes = buildPlate(this->variant, this->details, {
+        const PlateShape shape = {
           .offset = box.GetFillOffset(),
           .size = box.GetFillSize(),
           .chamfer = element->ResolveLength(this->chamfer),
           .scale = scale,
           .opacity = element->GetComputedValues().opacity(),
           .textureScale = textureScale,
+        };
+        const auto built = std::ranges::find_if(this->built, [renderManager, &shape](const PlateData* data) {
+          return data->renderManager == renderManager && data->shape == shape;
         });
 
+        if (built != this->built.end()) {
+          (*built)->users++;
+
+          return reinterpret_cast<Rml::DecoratorDataHandle>(*built);
+        }
+
+        PlateMeshes meshes = buildPlate(this->variant, this->details, shape);
         auto* data = new PlateData{
-          renderManager->MakeGeometry(std::move(meshes.base)),
-          renderManager->MakeGeometry(std::move(meshes.texture)),
-          renderManager->MakeGeometry(std::move(meshes.top)),
+          .base = renderManager->MakeGeometry(std::move(meshes.base)),
+          .texture = renderManager->MakeGeometry(std::move(meshes.texture)),
+          .top = renderManager->MakeGeometry(std::move(meshes.top)),
+          .renderManager = renderManager,
+          .shape = shape,
         };
+
+        this->built.push_back(data);
 
         return reinterpret_cast<Rml::DecoratorDataHandle>(data);
       }
 
       void ReleaseElementData(Rml::DecoratorDataHandle elementData) const override {
-        delete reinterpret_cast<PlateData*>(elementData);
+        auto* data = reinterpret_cast<PlateData*>(elementData);
+
+        if (--data->users > 0) {
+          return;
+        }
+
+        std::erase(this->built, data);
+        delete data;
       }
 
       void RenderElement(Rml::Element* element, Rml::DecoratorDataHandle elementData) const override {
@@ -524,6 +557,8 @@ namespace {
       PLATE_DETAILS details;
       Rml::NumericValue chamfer;
       int textureIndex = -1;
+      /** Построенные сетки, по одной на форму. Сетка живёт, пока её держит хоть один элемент */
+      mutable std::vector<PlateData*> built;
   };
 }
 
