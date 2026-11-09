@@ -17,9 +17,11 @@ const char* const EDITOR_DOCUMENT = R"RML(
     padding: 4dp;
   }
 
-  scrollbarvertical { width: 8dp; }
-  scrollbarvertical slidertrack { background-color: #0c0e12; border-radius: 4dp; }
-  scrollbarvertical sliderbar { background-color: #3a414c; border-radius: 4dp; min-height: 20dp; }
+  /* Полоса прокрутки: жёлоб тёмного стекла и металлический ползунок с насечкой, отступ не даёт ей лечь на фаску панели */
+  scrollbarvertical { width: 12dp; margin: 6dp 4dp 6dp 0; }
+  scrollbarvertical slidertrack { decorator: plate(display 2dp none); }
+  scrollbarvertical sliderbar { min-height: 28dp; cursor: pointer; decorator: plate(button 2dp grip); }
+  scrollbarvertical sliderbar:hover, scrollbarvertical sliderbar:active { decorator: plate(button-hover 2dp grip); }
   scrollbarhorizontal { height: 0; }
 
   /*

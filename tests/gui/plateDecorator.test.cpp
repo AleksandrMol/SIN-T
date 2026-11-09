@@ -2,6 +2,7 @@
 
 #include <RmlUi/Core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 
@@ -135,6 +136,39 @@ TEST_CASE("Винты и косынки появляются, только ес�
   screen.size = Rml::Vector2f(400.0f, 300.0f);
 
   CHECK_FALSE(buildPlate(PLATE_VARIANT::BARE, PLATE_DETAILS::GUSSETS, screen).top.vertices.empty());
+}
+
+TEST_CASE("Насечка ползунка идёт поперёк длинной стороны и не помещается на короткую пластину") {
+  // Размах добавленных насечкой вершин вдоль осей
+  const auto measureGrip = [](Rml::Vector2f size) {
+    PlateShape shape = SHAPE;
+
+    shape.size = size;
+    shape.chamfer = 2.0f;
+
+    const Rml::Mesh plain = buildPlate(PLATE_VARIANT::BUTTON, PLATE_DETAILS::NONE, shape).top;
+    const Rml::Mesh grip = buildPlate(PLATE_VARIANT::BUTTON, PLATE_DETAILS::GRIP, shape).top;
+    Rml::Vector2f low(1e9f, 1e9f);
+    Rml::Vector2f high(-1e9f, -1e9f);
+
+    for (size_t index = plain.vertices.size(); index < grip.vertices.size(); index++) {
+      const Rml::Vector2f position = grip.vertices[index].position;
+
+      low = Rml::Vector2f(std::min(low.x, position.x), std::min(low.y, position.y));
+      high = Rml::Vector2f(std::max(high.x, position.x), std::max(high.y, position.y));
+    }
+
+    return grip.vertices.size() > plain.vertices.size() ? high - low : Rml::Vector2f(0.0f, 0.0f);
+  };
+
+  const Rml::Vector2f tall = measureGrip(Rml::Vector2f(30.0f, 120.0f));
+  const Rml::Vector2f wide = measureGrip(Rml::Vector2f(120.0f, 30.0f));
+
+  CHECK(tall.x > tall.y * 2.0f);
+  CHECK(wide.y > wide.x * 2.0f);
+  // Насечка посередине и на фаску не заходит
+  CHECK(tall.x < 30.0f - 4.0f);
+  CHECK(measureGrip(Rml::Vector2f(12.0f, 14.0f)) == Rml::Vector2f(0.0f, 0.0f));
 }
 
 TEST_CASE("Без среза пластина прямоугольная") {

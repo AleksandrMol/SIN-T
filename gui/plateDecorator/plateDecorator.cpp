@@ -24,6 +24,8 @@ namespace {
   constexpr float SCREW_RADIUS = 3.2f;
   constexpr float GUSSET = 26.0f;
   constexpr float SHEEN_COLUMN = 32.0f;
+  constexpr float GRIP_STEP = 3.0f;
+  constexpr int GRIP_GROOVES = 3;
   constexpr int MAX_SHEEN_COLUMNS = 48;
 
   // Полосы блеска как linear-gradient(100deg, ...) у блоков: положение вдоль полосы и сила, минус — темнее
@@ -47,6 +49,8 @@ namespace {
   const Rml::Colourb GUSSET_SHADOW_COLOR(0, 0, 0, 120);
   const Rml::Colourb GUSSET_LIGHT_COLOR(176, 187, 201);
   const Rml::Colourb GUSSET_DARK_COLOR(12, 14, 17);
+  const Rml::Colourb GROOVE_DARK_COLOR(0, 0, 0, 190);
+  const Rml::Colourb GROOVE_LIGHT_COLOR(200, 210, 224, 80);
 
   // Свет сверху слева, как у панелей, ручек и логотипа
   const Rml::Vector2f TO_LIGHT = Rml::Vector2f(-1.0f, -1.2f).Normalise();
@@ -408,6 +412,38 @@ namespace {
   }
 
   /**
+   * Насечка посередине: бороздки поперёк длинной стороны. Свет сверху слева, поэтому у бороздки
+   * тёмная кромка, а за ней светлая: свет падает на дальнюю стенку
+   */
+  void addGrip(MeshBuilder& builder, const PlateShape& shape, float edgeInset) {
+    const bool isTall = shape.size.y >= shape.size.x;
+    const float along = isTall ? shape.size.y : shape.size.x;
+    const float across = isTall ? shape.size.x : shape.size.y;
+    const float step = GRIP_STEP * shape.scale;
+    const float span = step * (float)(GRIP_GROOVES - 1);
+    const float margin = edgeInset + shape.scale;
+    const float half = across * 0.5f - margin;
+
+    // На короткой пластине насечка налезла бы на фаску
+    if (along < span + step * 4.0f || half < shape.scale) {
+      return;
+    }
+
+    const Rml::Vector2f center = shape.offset + shape.size * 0.5f;
+    const Rml::Vector2f lengthAxis = isTall ? Rml::Vector2f(0.0f, 1.0f) : Rml::Vector2f(1.0f, 0.0f);
+    const Rml::Vector2f crossAxis(lengthAxis.y, lengthAxis.x);
+
+    for (int index = 0; index < GRIP_GROOVES; index++) {
+      const Rml::Vector2f middle = center + lengthAxis * (step * (float)index - span * 0.5f);
+      const Rml::Vector2f dark[2] = { middle - crossAxis * half, middle + crossAxis * half };
+      const Rml::Vector2f light[2] = { dark[0] + lengthAxis * shape.scale, dark[1] + lengthAxis * shape.scale };
+
+      builder.addLine(dark, shape.scale, GROOVE_DARK_COLOR);
+      builder.addLine(light, shape.scale, GROOVE_LIGHT_COLOR);
+    }
+  }
+
+  /**
    * Треугольные косынки в углах, как у рамы экрана: пластина, кромка по гипотенузе, тень и винт
    */
   void addGussets(MeshBuilder& builder, const PlateShape& shape) {
@@ -615,6 +651,10 @@ PlateMeshes buildPlate(PLATE_VARIANT variant, PLATE_DETAILS details, const Plate
     addGussets(top, shape);
   }
 
+  if (hasSize && details == PLATE_DETAILS::GRIP) {
+    addGrip(top, shape, look.hasFace ? outline + bevel : 0.0f);
+  }
+
   return { base.takeMesh(), texture.takeMesh(), top.takeMesh() };
 }
 
@@ -627,7 +667,7 @@ PlateDecoratorInstancer::PlateDecoratorInstancer() {
     .AddParser("keyword", "frame, panel, sunken, button, button-hover, button-active, display, bare")
     .GetId();
   this->chamferId = this->RegisterProperty("chamfer", "0dp").AddParser("length").GetId();
-  this->detailsId = this->RegisterProperty("details", "none").AddParser("keyword", "none, screws, gussets").GetId();
+  this->detailsId = this->RegisterProperty("details", "none").AddParser("keyword", "none, screws, gussets, grip").GetId();
   this->RegisterShorthand("decorator", "variant, chamfer, details", Rml::ShorthandType::FallThrough);
 }
 
