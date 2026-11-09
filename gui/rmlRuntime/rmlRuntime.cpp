@@ -41,7 +41,8 @@ void acquireRmlRuntime() {
   runtime.plateInstancer = std::make_unique<PlateDecoratorInstancer>();
   Rml::Factory::RegisterDecoratorInstancer("plate", runtime.plateInstancer.get());
   Rml::Factory::RegisterDecoratorInstancer("grid", &runtime.gridInstancer);
-  Rml::LoadFontFace(Rml::Span<const Rml::byte>(embeddedFont, embeddedFontSize), "Noto Sans", Rml::Style::FontStyle::Normal, Rml::Style::FontWeight::Normal);
+  // Вариативный шрифт: без указания насыщенности RmlUi загружает все его начертания, стили выбирают их через font-weight
+  Rml::LoadFontFace(Rml::Span<const Rml::byte>(embeddedFont, embeddedFontSize), "Jura", Rml::Style::FontStyle::Normal, Rml::Style::FontWeight::Auto);
 }
 
 void releaseRmlRuntime() {

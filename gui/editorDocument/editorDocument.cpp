@@ -9,11 +9,15 @@ const char* const EDITOR_DOCUMENT = R"RML(
   body, div, wire-layer, knob { display: block; }
   input { display: inline-block; }
 
+  /*
+    Шрифт Jura (D-101): тонкий, поэтому основной текст Medium, а мелкие подписи SemiBold.
+    Буквы у него широкие: названия ручек 9dp, иначе «Bend range» не помещается в ячейку ручки
+  */
   body {
     width: 100%; height: 100%;
     display: flex; flex-direction: column;
     background-color: #07080a; color: #d6dbe3;
-    font-family: "Noto Sans"; font-size: 12dp;
+    font-family: "Jura"; font-size: 12dp; font-weight: 500;
     padding: 4dp;
   }
 
@@ -158,8 +162,8 @@ R"RML(
   .knob-cell { position: relative; width: 60dp; height: 72dp; text-align: center; }
   .knob-cell.legal knob { background-color: #f0923a38; border-radius: 19dp; }
   knob { width: 38dp; height: 38dp; margin: 0 auto; cursor: pointer; drag: drag; }
-  .knob-name { color: #c3cad5; font-size: 10dp; white-space: nowrap; overflow: hidden; }
-  .knob-value { color: #7f8896; font-size: 10dp; white-space: nowrap; overflow: hidden; }
+  .knob-name { color: #c3cad5; font-size: 9dp; font-weight: 600; white-space: nowrap; overflow: hidden; }
+  .knob-value { color: #7f8896; font-size: 10dp; font-weight: 600; white-space: nowrap; overflow: hidden; }
   .knob-mark {
     position: absolute; right: 8dp; top: 0; width: 6dp; height: 6dp;
     border-radius: 3dp; background-color: #f0923a;
@@ -199,7 +203,7 @@ R"RML(
   }
   .port.input { left: -8dp; }
   .port.output { right: -8dp; }
-  .port-label { position: absolute; right: 12dp; color: #f0923a; font-size: 10dp; pointer-events: none; }
+  .port-label { position: absolute; right: 12dp; color: #f0923a; font-size: 10dp; font-weight: 600; pointer-events: none; }
   .source .port { right: 0; top: 3dp; }
 
   #wire-remove {
