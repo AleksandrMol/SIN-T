@@ -254,6 +254,7 @@ if(SINT_BUILD_TESTS)
     add_executable(sint_gui_tests
       tests/gui/main.cpp
       tests/gui/editor.test.cpp
+      tests/gui/meshBuilder.test.cpp
       tests/gui/viewUpdate.test.cpp
     )
     target_link_libraries(sint_gui_tests PRIVATE sint_gui_view sint_plugin_objects sint_no_editor doctest::doctest)

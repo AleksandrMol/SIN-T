@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <utility>
 
 namespace {
@@ -82,6 +83,55 @@ void MeshBuilder::addArc(Rml::Vector2f center, float radius, float startAngle, f
   }
 
   this->addLine(points, width, color);
+}
+
+float MeshBuilder::getRingAngle(int step, int steps) {
+  return 2.0f * std::numbers::pi_v<float> * (float)step / (float)steps;
+}
+
+void MeshBuilder::addRing(const Ring& ring, std::span<const Rml::Colourb> innerColors, std::span<const Rml::Colourb> outerColors) {
+  constexpr int ROW_COUNT = 3;
+  const int steps = std::max(ring.steps, 3);
+  const int first = (int)this->mesh.vertices.size();
+  // Короткая таблица не выводит за границы: недостающие шаги берут последний цвет, пустая — прозрачный
+  const auto pick = [](std::span<const Rml::Colourb> colors, int index) {
+    return colors.empty() ? Rml::Colourb(0, 0, 0, 0) : colors[std::min((size_t)index, colors.size() - 1)];
+  };
+
+  // Направление поворачивается на шаг умножением, без синуса и косинуса на каждой вершине
+  const float stepAngle = getRingAngle(1, steps);
+  const float stepCos = std::cos(stepAngle);
+  const float stepSin = std::sin(stepAngle);
+  Rml::Vector2f direction(1.0f, 0.0f);
+
+  this->mesh.vertices.reserve(this->mesh.vertices.size() + (size_t)(steps + 1) * ROW_COUNT);
+  this->mesh.indices.reserve(this->mesh.indices.size() + (size_t)steps * (ROW_COUNT - 1) * 6);
+
+  for (int index = 0; index <= steps; index++) {
+    // Последняя вершина ровно на первой, иначе накопленная погрешность оставила бы щель
+    if (index == steps) {
+      direction = Rml::Vector2f(1.0f, 0.0f);
+    }
+
+    const Rml::Colourb outer = pick(outerColors, index);
+
+    this->addVertex(ring.center + direction * ring.innerRadius, pick(innerColors, index), 1.0f);
+    this->addVertex(ring.center + direction * ring.outerRadius, outer, 1.0f);
+    this->addVertex(ring.center + direction * (ring.outerRadius + ring.feather), outer, 0.0f);
+
+    direction = Rml::Vector2f(direction.x * stepCos - direction.y * stepSin, direction.x * stepSin + direction.y * stepCos);
+
+    if (index == steps) {
+      continue;
+    }
+
+    for (int row = 0; row < ROW_COUNT - 1; row++) {
+      const int current = first + index * ROW_COUNT + row;
+      const int next = current + ROW_COUNT;
+
+      this->mesh.indices.insert(this->mesh.indices.end(), { current, next, current + 1, current + 1, next, next + 1 });
+    }
+  }
 }
 
 Rml::Mesh MeshBuilder::takeMesh() {

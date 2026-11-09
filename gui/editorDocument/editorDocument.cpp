@@ -151,7 +151,7 @@ const char* const EDITOR_DOCUMENT = R"RML(
 )RML"
 R"RML(
   .knob-cell { position: relative; width: 60dp; height: 72dp; text-align: center; }
-  .knob-cell.legal knob { background-color: #4a3423; border-radius: 19dp; }
+  .knob-cell.legal knob { background-color: #f0923a38; border-radius: 19dp; }
   knob { width: 38dp; height: 38dp; margin: 0 auto; cursor: pointer; drag: drag; }
   .knob-name { color: #c3cad5; font-size: 10dp; white-space: nowrap; overflow: hidden; }
   .knob-value { color: #7f8896; font-size: 10dp; white-space: nowrap; overflow: hidden; }
