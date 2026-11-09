@@ -87,6 +87,7 @@ class EditorView final : public Rml::EventListener {
     EditorOverlays overlays;
 
     Rml::Element* canvas;
+    Rml::Element* grid;
     Rml::Element* world;
     Rml::Element* presetButton;
     Rml::Element* wireRemove;
@@ -109,6 +110,9 @@ class EditorView final : public Rml::EventListener {
 
     void rebuild();
 
+    /**
+     * Сдвигает схему на прокрутку показанного графа, а сетку под ней — на остаток от прокрутки
+     */
     void setWorldOffset();
     void freezeLayout();
     ModulePosition findFreePosition(ModulePosition start) const;

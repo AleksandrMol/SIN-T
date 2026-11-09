@@ -5,6 +5,7 @@
 
 #include "../elementTools/elementTools.h"
 #include "../graphLayout/graphLayout.h"
+#include "../gridDecorator/gridDecorator.h"
 #include "../knob/knob.h"
 #include "../wireLayer/wireLayer.h"
 
@@ -36,6 +37,7 @@ namespace {
 EditorView::EditorView(Rml::ElementDocument* document, EditorBackend& backend, std::function<void()> requestKeyboard)
   : document(document), backend(backend), scene(document, backend), overlays(document, std::move(requestKeyboard)) {
   this->canvas = document->GetElementById("canvas");
+  this->grid = document->GetElementById("grid");
   this->world = document->GetElementById("world");
   this->presetButton = document->GetElementById("preset-button");
   this->wireRemove = document->GetElementById("wire-remove");
@@ -144,6 +146,11 @@ void EditorView::setWorldOffset() {
 
   this->world->SetProperty(Rml::PropertyId::Left, makeLength(pan.x));
   this->world->SetProperty(Rml::PropertyId::Top, makeLength(pan.y));
+
+  const Rml::Vector2f gridOffset = getGridOffset(pan);
+
+  this->grid->SetProperty(Rml::PropertyId::Left, makeLength(gridOffset.x));
+  this->grid->SetProperty(Rml::PropertyId::Top, makeLength(gridOffset.y));
 }
 
 /**

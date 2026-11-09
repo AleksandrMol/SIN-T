@@ -15,6 +15,8 @@
 #include "../editorBackend/editorBackend.h"
 #include "../editorDocument/editorDocument.h"
 #include "../editorView/editorView.h"
+#include "../logoImage/logoImage.h"
+#include "../metalTextures/metalTextures.h"
 #include "../rmlRuntime/rmlRuntime.h"
 
 namespace {
@@ -88,13 +90,36 @@ namespace {
 
     std::fclose(file);
   }
+
+  /**
+   * Рендерер RmlUi, который отдаёт текстуры металла и логотип по именам sint:... из стилей.
+   * Остальные картинки грузит как обычно
+   */
+  class EditorRenderer final : public RenderInterface_GL3 {
+    public:
+      Rml::TextureHandle LoadTexture(Rml::Vector2i& dimensions, const Rml::String& source) override {
+        const TextureImage* image = findMetalTexture(source);
+
+        if (!image) {
+          image = findLogoImage(source);
+        }
+
+        if (image) {
+          dimensions = Rml::Vector2i(image->width, image->height);
+
+          return this->GenerateTexture(image->pixels, dimensions);
+        }
+
+        return RenderInterface_GL3::LoadTexture(dimensions, source);
+      }
+  };
 }
 
 struct PluginWindow::Implementation {
   EditorBackend& backend;
   PuglWorld* world = nullptr;
   PuglView* view = nullptr;
-  std::unique_ptr<RenderInterface_GL3> renderer;
+  std::unique_ptr<EditorRenderer> renderer;
   Rml::Context* context = nullptr;
   std::unique_ptr<EditorView> editor;
   uint32_t width = DEFAULT_WIDTH;
@@ -124,7 +149,7 @@ struct PluginWindow::Implementation {
     s_glUsers++;
     acquireRmlRuntime();
 
-    this->renderer = std::make_unique<RenderInterface_GL3>();
+    this->renderer = std::make_unique<EditorRenderer>();
     this->renderer->SetViewport((int)this->width, (int)this->height);
 
     const std::string name = "sint-" + std::to_string((uintptr_t)this);
@@ -180,8 +205,10 @@ struct PluginWindow::Implementation {
     }
 
     this->context->Update();
-    this->renderer->BeginFrame();
+    // Clear до BeginFrame, как в бэкендах RmlUi: Clear оставляет цвет очистки непрозрачным,
+    // а BeginFrame возвращает прозрачный. Иначе слои для box-shadow и фильтров заливаются чёрным
     this->renderer->Clear();
+    this->renderer->BeginFrame();
     this->context->Render();
     this->renderer->EndFrame();
     this->isDirty = false;

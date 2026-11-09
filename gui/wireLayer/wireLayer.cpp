@@ -9,14 +9,20 @@
 #include "../meshBuilder/meshBuilder.h"
 
 namespace {
-  const Rml::Colourb AUDIO_COLOR(122, 162, 247);
-  const Rml::Colourb MODULATION_COLOR(255, 158, 100);
+  const Rml::Colourb AUDIO_COLOR(61, 141, 232);
+  const Rml::Colourb MODULATION_COLOR(240, 146, 58);
   const Rml::Colourb SELECTED_COLOR(255, 255, 255);
+  // Тёмная подложка под проводом: он читается и на светлом металле блоков, и на линиях сетки
+  const Rml::Colourb UNDERLAY_COLOR(0, 0, 0, 160);
 
-  constexpr float DASH_LENGTH = 7.0f;
+  // Размеры в dp
+  constexpr float WIRE_WIDTH = 3.0f;
+  constexpr float SELECTED_WIDTH = 4.0f;
+  constexpr float UNDERLAY = 1.5f;  // на столько подложка шире провода с каждой стороны
+  constexpr float DASH_LENGTH = 8.0f;
   constexpr float GAP_LENGTH = 5.0f;
-  constexpr float ARROW_LENGTH = 8.0f;
-  constexpr float ARROW_WIDTH = 4.5f;
+  constexpr float ARROW_LENGTH = 9.0f;
+  constexpr float ARROW_WIDTH = 5.0f;
 
   Rml::Vector2f findCenter(Rml::Element* element) {
     return element->GetAbsoluteOffset(Rml::BoxArea::Border) + element->GetBox().GetSize(Rml::BoxArea::Border) * 0.5f;
@@ -33,15 +39,19 @@ namespace {
     return makeWireCurve({ start.x, start.y }, { end.x, end.y });
   }
 
-  void drawArrow(MeshBuilder& builder, const WireCurve& curve, Rml::Colourb color, float scale) {
+  /**
+   * Стрелка у цели. grow расширяет её во все стороны: так рисуется подложка
+   */
+  void drawArrow(MeshBuilder& builder, const WireCurve& curve, Rml::Colourb color, float scale, float grow) {
     const WirePoint tip = curve.back();
     const WirePoint before = curve[curve.size() - 3];
     const Rml::Vector2f direction = Rml::Vector2f(tip.x - before.x, tip.y - before.y).Normalise();
     const Rml::Vector2f normal(-direction.y, direction.x);
-    const Rml::Vector2f end(tip.x, tip.y);
-    const Rml::Vector2f base = end - direction * (ARROW_LENGTH * scale);
+    const Rml::Vector2f end = Rml::Vector2f(tip.x, tip.y) + direction * grow;
+    const Rml::Vector2f base = Rml::Vector2f(tip.x, tip.y) - direction * (ARROW_LENGTH * scale + grow);
+    const float halfWidth = ARROW_WIDTH * scale + grow;
 
-    builder.addTriangle(end, base + normal * (ARROW_WIDTH * scale), base - normal * (ARROW_WIDTH * scale), color);
+    builder.addTriangle(end, base + normal * halfWidth, base - normal * halfWidth, color);
   }
 
   /**
@@ -96,15 +106,20 @@ namespace {
       points.emplace_back(point.x, point.y);
     }
 
-    const float width = (isSelected ? 3.0f : 2.0f) * scale;
+    const float width = (isSelected ? SELECTED_WIDTH : WIRE_WIDTH) * scale;
+    const float grow = UNDERLAY * scale;
 
+    // Сначала подложка, сверху провод. Пунктир с подложкой у каждого штриха, иначе он читался бы сплошной тёмной линией
     if (kind == WIRE_KIND::AUDIO) {
+      builder.addLine(points, width + grow * 2.0f, UNDERLAY_COLOR);
       builder.addLine(points, width, color);
     } else {
+      drawDashes(builder, points, width + grow * 2.0f, UNDERLAY_COLOR, scale);
       drawDashes(builder, points, width, color, scale);
     }
 
-    drawArrow(builder, curve, color, scale);
+    drawArrow(builder, curve, UNDERLAY_COLOR, scale, grow);
+    drawArrow(builder, curve, color, scale, 0.0f);
   }
 
   /**

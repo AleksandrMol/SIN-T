@@ -75,15 +75,17 @@ foreach(target freetype rmlui_core pugl_static)
   sint_apply_glibc_compat(${target})
 endforeach()
 
-# Шрифт с кириллицей встраивается в бинарник: имена пресетов могут быть русскими
-set(SINT_FONT_FILE ${CMAKE_BINARY_DIR}/NotoSans-Regular.ttf)
+# Шрифт Jura (D-101) с кириллицей встраивается в бинарник: имена пресетов могут быть русскими.
+# Вариативный: все начертания от Light до Bold в одном файле, лицензия OFL
+set(SINT_FONT_FILE ${CMAKE_BINARY_DIR}/Jura-Variable.ttf)
 file(DOWNLOAD
-  https://raw.githubusercontent.com/notofonts/notofonts.github.io/28b15b4b43b7bed62b5cf6e6b0b5ff5846270535/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf
+  https://raw.githubusercontent.com/google/fonts/6e4b84c976cadb3c49a40fd9a1c203e4f7fcf2da/ofl/jura/Jura%5Bwght%5D.ttf
   ${SINT_FONT_FILE}
-  EXPECTED_HASH SHA256=478c558ea716033cd60c03438f628dfa75694dcf6b5f6d505a2f05fd2b4f3823
+  EXPECTED_HASH SHA256=188b415d44810d68b4d6b4a8c281f864184c2b8edc5e88e6357c89f7b44075bf
 )
+# Исходник пересоздаётся, когда шрифт новее: иначе старая папка сборки встроила бы прежний шрифт
 set(SINT_FONT_SOURCE ${CMAKE_BINARY_DIR}/embeddedFont.cpp)
-if(NOT EXISTS ${SINT_FONT_SOURCE})
+if(${SINT_FONT_FILE} IS_NEWER_THAN ${SINT_FONT_SOURCE})
   file(READ ${SINT_FONT_FILE} FONT_HEX HEX)
   string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," FONT_BYTES "${FONT_HEX}")
   file(WRITE ${SINT_FONT_SOURCE}

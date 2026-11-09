@@ -495,12 +495,18 @@ void EditorScene::buildMatrix() {
   }
 
   for (const ModRoute& route : list) {
+    // Источник, цель с глубиной и значение в своих ячейках, как на референсе D-093. Кнопка удаления — действие, а не данные, она вне ячеек
     Rml::Element* row = addElement(this->matrixRows, "div", "route");
+    Rml::Element* source = addElement(row, "div", "route-cell route-source");
 
-    addElement(row, "div", "route-source", this->makeSourceLabel(route.source));
-    addElement(row, "div", "route-target", this->makeTargetLabel(route.target));
+    addElement(source, "div", "route-name", this->makeSourceLabel(route.source));
+    addElement(source, "div", "route-arrow", "›");
 
-    Rml::Element* slider = addElement(row, "div", "route-depth");
+    Rml::Element* target = addElement(row, "div", "route-cell route-target");
+
+    addElement(target, "div", "route-name", this->makeTargetLabel(route.target));
+
+    Rml::Element* slider = addElement(target, "div", "route-depth");
 
     slider->SetAttribute("data-drag", "depth");
 
@@ -508,7 +514,7 @@ void EditorScene::buildMatrix() {
 
     addElement(slider, "div", "route-center");
 
-    Rml::Element* value = addElement(row, "div", "route-value");
+    Rml::Element* value = addElement(row, "div", "route-cell route-value");
     Rml::Element* remove = addElement(row, "div", "block-button", "×");
 
     remove->SetAttribute("data-action", "remove-route");

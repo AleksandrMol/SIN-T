@@ -17,6 +17,7 @@
 - **Редактор:** блоки с ручками, провода, вход в генератор, матрица, макросы, пресеты, масштаб экрана (D-063–D-069). Масштаба самого холста нет.
 - **Хост:** автоматизация через постоянный список из 1032 слотов, запись движения ручки, сохранение в проект, файлы пресетов в `~/.local/share/SIN-T/presets/`.
 - **Чего ещё нет:** Delay, сборки под Windows, отмены действий. Подробно в `docs/BACKLOG.md`.
+- **Внешний вид:** холодный индустриальный стиль (D-093–D-102): металлические пластины со срезами и винтами, металлические ручки, текстуры, логотип кодом, сетка на холсте, ячейки матрицы, порты-гнёзда, провода с подложкой, шрифт Jura. Пользователь проверил его в Reaper и принял 10 ноября. Мини-экраны делаются в доработке модулей по одному (D-094, D-097).
 
 Решения D-066–D-069 и кривые ENV (D-049) записаны со статусом `предложено`: пользователь их явно не подтверждал.
 
@@ -75,7 +76,7 @@ cmake --build build --target update_golden       # только при наме�
   - Исполнение: `engine`, `executionPlan`, `planExchange`, `modulationPlan`, `modulationCompiler`, `voicePool`, `generator`, `moduleProcessor`, `stubProcessor`.
   - Модули: `oscillator`, `filter`, `amp`, `env`, `lfo`, `macros`.
 - `plugin/` — CLAP: `parameters.cpp` (значения от хоста), `editing.cpp` (правки со стороны плагина), `pluginEditorBackend` (плагин для редактора), `editor.cpp` (`clap.gui`, таймер), `noEditor.cpp` (сборки без окна).
-- `gui/` — редактор: `editorView` (мышь в команды, какой граф показан), `editorScene` (модель в элементы, как render), `editorOverlays` (меню, ввод текста, сообщение), `elementTools` (мелкие функции для элементов), `editorDocument` (разметка и стили), `editorBackend` (контракт с плагином), `graphLayout`, `knob`, `wireLayer`, `wireGeometry`, `meshBuilder`, `rmlRuntime`, `pluginWindow`.
+- `gui/` — редактор: `editorView` (мышь в команды, какой граф показан), `editorScene` (модель в элементы, как render), `editorOverlays` (меню, ввод текста, сообщение), `elementTools` (мелкие функции для элементов), `editorDocument` (разметка и стили), `editorBackend` (контракт с плагином), `graphLayout`, `knob`, `wireLayer`, `wireGeometry`, `meshBuilder`, `rmlRuntime`, `pluginWindow`. `plateDecorator` и `gridDecorator` (свои декораторы пластин металла и сетки холста, D-096, D-098). Картинки, посчитанные кодом (`textureImage`): `metalTextures` (текстуры металла) и `logoImage` (логотип, D-095), рендерер окна отдаёт их по именам `sint:...` из стилей.
 - `tests/` — doctest, `<тема>.test.cpp`. `modelFixture.h` — тестовые модули, `allocationCounter` — счётчик памяти в аудиопотоке. `parameters.test.cpp` — полный плагин через CLAP с записывающим хостом, `liveChanges.test.cpp` — правки под звук, `gui/editor.test.cpp` — настоящий RmlUi и плагин с пустой отрисовкой, мышь идёт через те же вызовы, что и в окне (стенд в `gui/editorFixture.h`). `gui/viewUpdate.test.cpp` — вид после случайных правок совпадает с построенным заново. `golden/` — эталоны звука.
 - `tools/` — `offlineHost`, `wav`, `render`, `editorPreview`, `editorBench`, `goldenScenarios` (сценарии эталонов), `updateGolden`. `examples/` — пресеты, проверяются тестом. `prototypes/gui-rmlui/` — старый прототип, нужен только ради `test_host`.
 - `scripts/` — `check.sh` (полная проверка), `checkLibVersions.sh` (версии библиотек). `.github/workflows/check.yml` — CI.
@@ -121,4 +122,7 @@ cmake --build build --target update_golden       # только при наме�
 - `std::format` нельзя: ему нужна libstdc++ новее, чем в среде flatpak-Reaper, и плагин там не загрузится (D-069). Числа в текст — через `std::to_chars`, он ещё и не зависит от локали.
 - Хост может поменять локаль на весь процесс: в тексте стилей RmlUi нет дробных чисел (D-069).
 - В `overflow: hidden` RmlUi не считает абсолютные блоки вложенного контейнера, холсту нужен `clip: always`. Для `dragdrop` нужен `drag: drag-drop`, а не `drag`.
+- `Clear()` рендерера RmlUi вызывать до `BeginFrame()`, иначе слои для `box-shadow` и фильтров заливаются чёрным. Тень `inset` рисуется под декораторами: под непрозрачным градиентом её не видно, тон тогда задаётся фоном, а слои сверху полупрозрачные.
+- Свой декоратор RmlUi создаётся после `Rml::Initialise`: разборщики свойств появляются только в ней. Холсту и его рамкам `flex-basis: 0`: с `auto` RmlUi раскладывает все блоки ради измерения (D-096).
+- Флекс RmlUi раскладывает элементы на пробу и окончательно, поэтому данные декораторов просятся заново почти в каждом кадре с раскладкой, даже при прежнем размере. Свой декоратор отдаёт уже построенную сетку при той же форме, как `plateDecorator`.
 - Открытый Reaper — это сеанс пользователя: не закрывать и не слать ему команды (`docs/VERIFICATION.md`).
