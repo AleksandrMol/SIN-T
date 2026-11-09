@@ -25,15 +25,27 @@ const char* const EDITOR_DOCUMENT = R"RML(
     display: flex; flex-direction: row; align-items: center;
     flex: 0 0 auto; padding: 0 10dp;
   }
+  /*
+    Металл выпуклой пластины — три слоя, первый рисуется сверху:
+    блик полосами, основной тон, кромка. Кромка закрашивает всю пластину вместе с рамкой,
+    два верхних слоя закрывают всё, кроме рамки, и от кромки остаётся градиентная рамка.
+    Свет падает сверху слева. Внутренняя тень (inset) рисуется под слоями,
+    поэтому у углублённых панелей тон задан фоном, а слои полупрозрачные.
+  */
   #toolbar {
     height: 44dp;
-    decorator: linear-gradient(180deg, #343a43 0%, #23272e 55%, #1b1e24 100%);
-    border-top: 1dp #4a525e; border-bottom: 1dp #0a0c0f;
+    border-top: 1dp #000000;
+    decorator:
+      linear-gradient(100deg, #ffffff00 0%, #ffffff16 16%, #ffffff00 32%, #00000018 46%, #ffffff00 56%, #ffffff10 72%, #ffffff00 88%) padding-box,
+      linear-gradient(180deg, #3b424c 0%, #2a2e35 55%, #1e2127 100%) padding-box,
+      linear-gradient(90deg, #a3aebd 0%, #5d6672 35%, #3a414b 100%) border-box;
   }
   #nav {
     height: 32dp;
-    decorator: linear-gradient(180deg, #1d2127 0%, #171a1f 100%);
-    border-top: 1dp #2c3139; border-bottom: 1dp #07080a;
+    background-color: #181b20;
+    decorator: linear-gradient(180deg, #ffffff06 0%, #00000020 100%);
+    border-top: 1dp #07080a; border-bottom: 1dp #07080a;
+    box-shadow: #ffffff12 0dp 1dp 0dp inset;
   }
   #logo {
     font-size: 20dp; color: #c4cedb; margin-right: 18dp;
@@ -43,24 +55,37 @@ const char* const EDITOR_DOCUMENT = R"RML(
 
   .button {
     height: 24dp; line-height: 22dp; padding: 0 12dp; margin-left: 6dp; box-sizing: border-box;
-    decorator: linear-gradient(180deg, #424954 0%, #2c3139 100%);
-    border: 1dp #15181c; border-top-color: #5c6573; border-radius: 3dp;
-    box-shadow: #00000080 0dp 1dp 2dp;
+    border: 1dp #0d0f12; border-radius: 3dp;
+    decorator:
+      linear-gradient(180deg, #ffffff14 0%, #ffffff04 48%, #ffffff00 52%, #ffffff06 100%) padding-box,
+      linear-gradient(180deg, #4a525d 0%, #2c3138 100%) padding-box,
+      linear-gradient(180deg, #a3aebd 0%, #4d5561 45%, #121417 100%) border-box;
+    box-shadow: #00000090 0dp 1dp 2dp;
     color: #d6dbe3; cursor: pointer;
   }
-  .button:hover { decorator: linear-gradient(180deg, #4d5562 0%, #343a44 100%); color: #ffffff; }
+  .button:hover {
+    decorator:
+      linear-gradient(180deg, #ffffff1c 0%, #ffffff06 48%, #ffffff00 52%, #ffffff08 100%) padding-box,
+      linear-gradient(180deg, #56606c 0%, #343a42 100%) padding-box,
+      linear-gradient(180deg, #c0cad6 0%, #5a636f 45%, #15181c 100%) border-box;
+    color: #ffffff;
+  }
   .button:active {
-    decorator: linear-gradient(180deg, #1f4f8c 0%, #2a66b0 100%);
-    border-top-color: #12305a; color: #ffffff;
+    decorator:
+      linear-gradient(180deg, #00000030 0%, #ffffff00 50%, #ffffff10 100%) padding-box,
+      linear-gradient(180deg, #1d4b86 0%, #2b68b3 100%) padding-box,
+      linear-gradient(180deg, #0a1a30 0%, #23548f 55%, #7fb2ec 100%) border-box;
+    color: #ffffff;
   }
   #preset-button {
     min-width: 200dp; margin-left: 0;
-    decorator: linear-gradient(180deg, #0b0d10 0%, #14181d 100%);
-    border: 1dp #3a414c; border-top-color: #050607; border-radius: 3dp;
-    box-shadow: #000000a0 0dp 1dp 3dp inset;
+    background-color: #0b0e12;
+    decorator: linear-gradient(170deg, #ffffff0a 0%, #ffffff00 60%);
+    border: 1dp #000000; border-bottom-color: #58616e; border-right-color: #2c3138;
+    box-shadow: #000000d0 0dp 2dp 4dp inset;
     color: #9fc4f5;
   }
-  #preset-button:hover { decorator: linear-gradient(180deg, #0e1115 0%, #191e24 100%); }
+  #preset-button:hover { background-color: #11151b; }
 
   #breadcrumbs { display: flex; flex-direction: row; align-items: center; }
   .crumb { color: #7f8896; cursor: pointer; }
@@ -73,9 +98,9 @@ const char* const EDITOR_DOCUMENT = R"RML(
 
   #canvas {
     position: relative; flex: 1 1 auto; overflow: hidden; clip: always;
-    background-color: #0d1014; drag: drag;
-    decorator: radial-gradient(circle farthest-corner at 50% 40%, #18202a 0%, #0f1318 60%, #0a0c0f 100%);
-    box-shadow: #000000d0 0dp 2dp 8dp inset;
+    background-color: #0e1116; drag: drag;
+    decorator: radial-gradient(circle farthest-corner at 50% 40%, #28405c1c 0%, #00000000 55%, #00000070 100%);
+    box-shadow: #000000e0 0dp 3dp 8dp inset;
   }
   #world { position: absolute; left: 0; top: 0; width: 1dp; height: 1dp; }
   #wires { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
@@ -83,19 +108,25 @@ const char* const EDITOR_DOCUMENT = R"RML(
 
   .block {
     position: absolute; width: 252dp; box-sizing: border-box;
-    decorator: linear-gradient(180deg, #2c3139 0%, #22262d 45%, #1b1e23 100%);
-    border: 1dp #0b0d10; border-top-color: #4a525e; border-radius: 4dp; drag: drag;
-    box-shadow: #000000b0 0dp 4dp 10dp, #ffffff0c 0dp 0dp 0dp 1dp inset;
+    border: 1dp #0b0d10; border-radius: 4dp; drag: drag;
+    decorator:
+      linear-gradient(115deg, #ffffff00 10%, #ffffff16 26%, #ffffff00 42%, #00000018 56%, #ffffff00 66%, #ffffff0c 80%, #ffffff00 94%) padding-box,
+      linear-gradient(180deg, #2e333b 0%, #23272e 45%, #1b1e23 100%) padding-box,
+      linear-gradient(135deg, #d0d9e4 0%, #7d8795 15%, #474f5a 45%, #2a2f36 100%) border-box;
+    box-shadow: #000000 0dp 0dp 0dp 1dp, #000000b0 0dp 4dp 10dp;
   }
-  .block:hover { border-top-color: #66707e; box-shadow: #000000c0 0dp 5dp 12dp, #ffffff14 0dp 0dp 0dp 1dp inset; }
-  .block.stub { border-color: #c0485c; }
+  /* Рамка закрыта кромкой, поэтому наведение и заглушка видны по обводке тенью */
+  .block:hover { box-shadow: #3d8de870 0dp 0dp 0dp 1dp, #000000c0 0dp 5dp 12dp; }
+  .block.stub { box-shadow: #c0485c 0dp 0dp 0dp 1dp, #000000b0 0dp 4dp 10dp; }
   .block.small { width: 134dp; }
 
   .block-header {
     display: flex; flex-direction: row; align-items: center;
     height: 24dp; padding: 0 6dp 0 10dp;
-    decorator: linear-gradient(180deg, #3b414b 0%, #2b3038 100%);
-    border-bottom: 1dp #0d0f12; border-radius: 3dp 3dp 0 0;
+    decorator:
+      linear-gradient(100deg, #ffffff00 4%, #ffffff22 20%, #ffffff00 36%, #00000016 50%, #ffffff00 60%, #ffffff12 76%, #ffffff00 92%),
+      linear-gradient(180deg, #4a515c 0%, #363c45 50%, #2a2e35 100%);
+    border-bottom: 1dp #0b0d10; border-radius: 3dp 3dp 0 0;
   }
   .block-title { flex: 1 1 auto; white-space: nowrap; overflow: hidden; color: #e2e6ec; font-effect: shadow(0dp 1dp #000000a0); }
   .block-button {
@@ -105,9 +136,13 @@ const char* const EDITOR_DOCUMENT = R"RML(
   .block-button:hover { background-color: #4a525e; color: #ffffff; }
   .power-dot {
     width: 8dp; height: 8dp; margin: 4dp auto 0; border-radius: 4dp; pointer-events: none;
-    background-color: #7fd36a; box-shadow: #7fd36a60 0dp 0dp 4dp;
+    decorator: radial-gradient(circle farthest-side at 35% 30%, #eaffde 0%, #8ee07a 35%, #3f9233 100%);
+    box-shadow: #000000a0 0dp 0dp 0dp 1dp, #7fd36a50 0dp 0dp 5dp 1dp;
   }
-  .disabled .power-dot { background-color: #3c424c; box-shadow: none; }
+  .disabled .power-dot {
+    decorator: radial-gradient(circle farthest-side at 35% 30%, #8a919c 0%, #454b55 45%, #22262c 100%);
+    box-shadow: #000000a0 0dp 0dp 0dp 1dp;
+  }
 
   .block-body { display: flex; flex-direction: row; flex-wrap: wrap; padding: 6dp 4dp; min-height: 28dp; }
   .block-note { padding: 4dp 10dp 8dp; color: #7f8896; }
@@ -131,10 +166,13 @@ R"RML(
     box-shadow: #0a0c0f 0dp 0dp 0dp 2dp, #00000080 0dp 2dp 3dp 2dp;
     drag: drag-drop; cursor: pointer;
   }
-  .port.audio { background-color: #3d8de8; }
-  .port.modulation { background-color: #f0923a; border-radius: 3dp; }
-  .port:hover { background-color: #ffffff; }
-  .port.legal { background-color: #7fd36a; }
+  .port.audio { decorator: radial-gradient(circle farthest-corner at 35% 30%, #a8cffa 0%, #4f9cf2 45%, #1d5aa6 100%); }
+  .port.modulation {
+    border-radius: 3dp;
+    decorator: radial-gradient(circle farthest-corner at 35% 30%, #ffd2a0 0%, #f39a45 45%, #a85a17 100%);
+  }
+  .port:hover { decorator: none; background-color: #ffffff; }
+  .port.legal { decorator: radial-gradient(circle farthest-corner at 35% 30%, #eaffde 0%, #8ee07a 40%, #3f9233 100%); }
   .port.input { left: -8dp; }
   .port.output { right: -8dp; }
   .port-label { position: absolute; right: 12dp; color: #f0923a; font-size: 10dp; pointer-events: none; }
@@ -147,13 +185,17 @@ R"RML(
 
   #bottom {
     display: flex; flex-direction: row; flex: 0 0 188dp; padding: 6dp;
-    decorator: linear-gradient(180deg, #2a2f36 0%, #1c1f24 100%);
-    border-top: 1dp #4a525e;
+    border-top: 1dp #000000;
+    decorator:
+      linear-gradient(100deg, #ffffff00 0%, #ffffff14 18%, #ffffff00 34%, #00000018 48%, #ffffff00 58%, #ffffff0e 74%, #ffffff00 90%) padding-box,
+      linear-gradient(180deg, #2c3138 0%, #1d2025 100%) padding-box,
+      linear-gradient(90deg, #a3aebd 0%, #5d6672 35%, #3a414b 100%) border-box;
   }
   #macros, #matrix {
-    decorator: linear-gradient(180deg, #1c2026 0%, #15181c 100%);
-    border: 1dp #3a414c; border-top-color: #07080a; border-radius: 4dp;
-    box-shadow: #000000b0 0dp 2dp 6dp inset;
+    background-color: #14171b;
+    decorator: linear-gradient(180deg, #00000030 0%, #ffffff05 100%);
+    border: 1dp #07080a; border-bottom-color: #4f5864; border-right-color: #353b44; border-radius: 4dp;
+    box-shadow: #000000c0 0dp 3dp 7dp inset;
   }
   #macros { flex: 0 0 256dp; padding: 6dp; margin-right: 6dp; }
   .panel-title { color: #aeb8c6; height: 20dp; line-height: 20dp; font-effect: shadow(0dp 1dp #000000c0); }
@@ -167,8 +209,11 @@ R"RML(
   #matrix-rows { flex: 1 1 auto; overflow: hidden auto; padding-right: 10dp; }
   .route {
     display: flex; flex-direction: row; align-items: center; height: 26dp; margin-bottom: 3dp;
-    decorator: linear-gradient(180deg, #1f242b 0%, #191d22 100%);
-    border: 1dp #0a0c0f; border-top-color: #2e343d; border-radius: 3dp;
+    border: 1dp #0a0c0f; border-radius: 3dp;
+    decorator:
+      linear-gradient(100deg, #ffffff00 0%, #ffffff10 22%, #ffffff00 44%, #00000014 60%, #ffffff00 76%) padding-box,
+      linear-gradient(180deg, #252a31 0%, #1b1f24 100%) padding-box,
+      linear-gradient(180deg, #5d6672 0%, #2a2f36 50%, #0d0f12 100%) border-box;
   }
   .route-source { flex: 0 0 150dp; padding-left: 8dp; color: #f0923a; white-space: nowrap; overflow: hidden; }
   .route-target { flex: 1 1 auto; white-space: nowrap; overflow: hidden; }
@@ -180,7 +225,7 @@ R"RML(
   }
   .route-fill {
     position: absolute; top: 0; height: 100%; border-radius: 1dp; pointer-events: none;
-    decorator: linear-gradient(180deg, #5aa6ff 0%, #2a6fc4 100%);
+    decorator: linear-gradient(180deg, #9ccaff 0%, #4f9cf2 35%, #2a6fc4 100%);
     box-shadow: #3d8de840 0dp 0dp 4dp;
   }
   .route-center { position: absolute; left: 50%; top: 0; width: 1dp; height: 100%; background-color: #4c5361; pointer-events: none; }
@@ -189,8 +234,10 @@ R"RML(
 
   #popup {
     position: absolute; min-width: 180dp; max-height: 320dp; overflow: hidden auto; padding: 4dp;
-    decorator: linear-gradient(180deg, #2c3139 0%, #1f2329 100%);
-    border: 1dp #0a0c0f; border-top-color: #565f6c; border-radius: 4dp; z-index: 30;
+    border: 1dp #0a0c0f; border-radius: 4dp; z-index: 30;
+    decorator:
+      linear-gradient(180deg, #2e333b 0%, #1f2329 100%) padding-box,
+      linear-gradient(135deg, #a3aebd 0%, #4d5561 25%, #15181c 100%) border-box;
     box-shadow: #000000c0 0dp 6dp 16dp;
   }
   .menu-item { height: 24dp; line-height: 24dp; padding: 0 10dp; white-space: nowrap; border-radius: 3dp; cursor: pointer; }
@@ -199,8 +246,11 @@ R"RML(
 
   #prompt {
     position: absolute; left: 50%; top: 120dp; width: 320dp; margin-left: -160dp; padding: 12dp;
-    decorator: linear-gradient(180deg, #2c3139 0%, #1f2329 100%);
-    border: 1dp #0a0c0f; border-top-color: #565f6c; border-radius: 4dp; z-index: 40;
+    border: 1dp #0a0c0f; border-radius: 4dp; z-index: 40;
+    decorator:
+      linear-gradient(115deg, #ffffff00 10%, #ffffff0c 30%, #ffffff00 50%) padding-box,
+      linear-gradient(180deg, #2e333b 0%, #1f2329 100%) padding-box,
+      linear-gradient(135deg, #a3aebd 0%, #4d5561 25%, #15181c 100%) border-box;
     box-shadow: #000000c0 0dp 8dp 20dp;
   }
   #prompt-label { margin-bottom: 8dp; }
