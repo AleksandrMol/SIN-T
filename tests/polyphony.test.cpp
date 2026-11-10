@@ -222,7 +222,7 @@ TEST_CASE_FIXTURE(PolyFixture, "Высоту голоса задаёт нота"
   CHECK(std::abs(countRisingCrossings(this->run((uint32_t)SAMPLE_RATE)) - crossings) <= 1);
 }
 
-TEST_CASE_FIXTURE(PolyFixture, "Параметры coarse и fine сдвигают высоту ноты") {
+TEST_CASE_FIXTURE(PolyFixture, "Параметры semi, coarse и fine сдвигают высоту ноты") {
   const ModuleId generator = this->add("generator");
   const ModuleId osc = this->addSine(generator);
 
@@ -231,14 +231,32 @@ TEST_CASE_FIXTURE(PolyFixture, "Параметры coarse и fine сдвигаю
 
   float crossings = 0.0f;
 
-  SUBCASE("Coarse: октава вверх") {
-    this->set(osc, "coarse", 12.0f);
+  SUBCASE("Semi: октава вверх") {
+    this->set(osc, "semi", 12.0f);
     crossings = 880.0f;
+  }
+
+  // 6,6 и 7 полутонов различаются на 16 Гц, а ошибка счёта переходов не больше 1,5
+  SUBCASE("Semi ходит только по полутонам") {
+    this->set(osc, "semi", 6.6f);
+    crossings = 440.0f * std::pow(2.0f, 7.0f / 12.0f);
+  }
+
+  SUBCASE("Coarse меняет высоту плавно (D-103)") {
+    this->set(osc, "coarse", 6.6f);
+    crossings = 440.0f * std::pow(2.0f, 6.6f / 12.0f);
   }
 
   SUBCASE("Fine: 50 центов вниз") {
     this->set(osc, "fine", -50.0f);
     crossings = 440.0f * std::pow(2.0f, -0.5f / 12.0f);
+  }
+
+  SUBCASE("Сдвиги складываются") {
+    this->set(osc, "semi", 12.0f);
+    this->set(osc, "coarse", -0.5f);
+    this->set(osc, "fine", 50.0f);
+    crossings = 880.0f;
   }
 
   this->apply();
@@ -265,6 +283,7 @@ TEST_CASE_FIXTURE(PolyFixture, "Самая высокая нота с макси
 
   // Пила зависит от фазы напрямую: выше предела частоты её значение уходит за границы
   this->set(osc, "wave", (float)WAVE_TYPE::SAW);
+  this->set(osc, "semi", 48.0f);
   this->set(osc, "coarse", 48.0f);
   this->connect(osc, this->getVoiceOutput(generator));
   this->connect(generator, this->model->getOutputId());

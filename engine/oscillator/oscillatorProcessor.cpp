@@ -8,9 +8,10 @@
 namespace {
   // Индексы в порядке parameters из описания
   constexpr uint32_t PARAM_WAVE = 0;
-  constexpr uint32_t PARAM_COARSE = 1;
+  constexpr uint32_t PARAM_SEMI = 1;
   constexpr uint32_t PARAM_FINE = 2;
-  constexpr uint32_t PARAM_LEVEL = 3;
+  constexpr uint32_t PARAM_COARSE = 3;
+  constexpr uint32_t PARAM_LEVEL = 4;
 
   // Выше этой доли частоты дискретизации шаг фазы перестаёт быть корректным
   constexpr float MAX_FREQUENCY_RATIO = 0.49f;
@@ -36,8 +37,8 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .choices = { "Sine", "Square", "Saw", "Triangle" },
     },
     {
-      .key = "coarse",
-      .name = "Coarse",
+      .key = "semi",
+      .name = "Semi",
       .minValue = -48.0f,
       .maxValue = 48.0f,
       .defaultValue = 0.0f,
@@ -52,6 +53,16 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .maxValue = 100.0f,
       .defaultValue = 0.0f,
       .unit = "ct",
+      .isModulatable = true,
+    },
+    {
+      // До D-103 был ступенчатым и выполнял роль semi. Значения из старых файлов дают ту же высоту
+      .key = "coarse",
+      .name = "Coarse",
+      .minValue = -48.0f,
+      .maxValue = 48.0f,
+      .defaultValue = 0.0f,
+      .unit = "st",
       .isModulatable = true,
     },
     {
@@ -81,6 +92,7 @@ float OscillatorProcessor::toFrequency(float pitch) const {
 }
 
 void OscillatorProcessor::process(const ProcessChunk& chunk) {
+  const ParameterRamp& coarse = chunk.parameters[PARAM_COARSE];
   const ParameterRamp& fine = chunk.parameters[PARAM_FINE];
   const ParameterRamp& level = chunk.parameters[PARAM_LEVEL];
   AudioBuffer& output = *chunk.outputs[0];
@@ -88,12 +100,12 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   // Ступенчатые параметры меняются на границе куска, без интерполяции (D-025)
   this->oscillator.setWave((WAVE_TYPE)chunk.parameters[PARAM_WAVE].end);
 
-  const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_COARSE].end;
+  const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_SEMI].end;
 
   // Экспонента считается только на концах куска, между ними частота интерполируется
   const ParameterRamp frequency = {
-    this->toFrequency(pitch + fine.start / 100.0f),
-    this->toFrequency(pitch + fine.end / 100.0f),
+    this->toFrequency(pitch + coarse.start + fine.start / 100.0f),
+    this->toFrequency(pitch + coarse.end + fine.end / 100.0f),
   };
 
   for (uint32_t frame = 0; frame < chunk.frames; frame++) {

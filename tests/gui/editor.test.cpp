@@ -56,7 +56,10 @@ TEST_CASE_FIXTURE(EditorFixture, "Ручки строятся по описан�
 
   const ModuleId oscillator = this->findModule("oscillator");
 
-  CHECK(this->count(".knob-cell[data-module=\"" + std::to_string(oscillator) + "\"]") == 4);
+  const size_t parameterCount = this->model().findModule(oscillator)->descriptor->parameters.size();
+
+  CHECK(parameterCount > 1);
+  CHECK(this->count(".knob-cell[data-module=\"" + std::to_string(oscillator) + "\"]") == (int)parameterCount);
   CHECK(this->text(this->cell(oscillator, "wave")->QuerySelector(".knob-value")) == "Saw");
   CHECK(this->text(this->cell(this->findModule("filter"), "cutoff")->QuerySelector(".knob-value")) == "1000 Hz");
   CHECK(this->text(this->cell(this->findModule("amp"), "velocity")->QuerySelector(".knob-name")) == "Vel sens");
