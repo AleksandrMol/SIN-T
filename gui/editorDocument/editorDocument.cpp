@@ -194,8 +194,17 @@ R"RML(
   .field:last-child { margin-right: 0; }
   .field:hover { background-color: #ffffff16; }
   .field.legal { background-color: #f0923a38; }
+  /* Пластина рисуется поверх фона, поэтому наведение и подсветка цели провода у Wave — полупрозрачный слой над ней */
   .field.wave-name { height: 20dp; margin: 0 4dp; background-color: #00000000; decorator: plate(display 3dp none); }
-  .field.wave-name.legal { background-color: #f0923a38; }
+  .field.wave-name:hover { decorator: linear-gradient(180deg, #ffffff10 0%, #ffffff10 100%), plate(display 3dp none); }
+  .field.wave-name.legal { decorator: linear-gradient(180deg, #f0923a38 0%, #f0923a38 100%), plate(display 3dp none); }
+  /* Четыре поля высоты тона в ряд: отступы меньше, ширины по самому длинному значению «-4», «-48», «-99.9», «-47.99» */
+  .pitch-octave, .pitch-semi, .pitch-fine, .pitch-coarse { padding: 0 4dp; }
+  .pitch-octave .field-name, .pitch-semi .field-name, .pitch-fine .field-name, .pitch-coarse .field-name { margin-right: 3dp; }
+  .pitch-octave { flex-grow: 43; }
+  .pitch-semi { flex-grow: 53; }
+  .pitch-fine { flex-grow: 60; }
+  .pitch-coarse { flex-grow: 67; }
   .field-icon { flex: 0 0 auto; margin-right: 4dp; color: #7f8896; font-size: 13dp; pointer-events: none; }
   .field-name { flex: 0 0 auto; margin-right: 4dp; color: #7f8896; font-size: 9dp; font-weight: 600; white-space: nowrap; pointer-events: none; }
   .field-value { flex: 1 1 auto; text-align: right; color: #9fc4f5; font-size: 11dp; white-space: nowrap; overflow: hidden; pointer-events: none; }

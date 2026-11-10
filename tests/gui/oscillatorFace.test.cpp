@@ -29,7 +29,7 @@ struct OscillatorFixture : EditorFixture {
 };
 
 TEST_CASE_FIXTURE(OscillatorFixture, "У каждого параметра осциллятора ровно один элемент: высота тона и фаза — поля, остальное ручки (D-108)") {
-  const std::vector<std::string> fields = { "wave", "semi", "fine", "coarse", "phase", "rand" };
+  const std::vector<std::string> fields = { "wave", "octave", "semi", "fine", "coarse", "phase", "rand" };
 
   for (const ParameterDescriptor& parameter : this->model().findModule(this->oscillator)->descriptor->parameters) {
     CAPTURE(parameter.key);
@@ -46,6 +46,7 @@ TEST_CASE_FIXTURE(OscillatorFixture, "У каждого параметра ос�
 
 TEST_CASE_FIXTURE(OscillatorFixture, "Поле пишет число коротко, без единиц через пробел (D-108)") {
   CHECK(this->shownValue(this->oscillator, "wave") == "Saw");
+  CHECK(this->shownValue(this->oscillator, "octave") == "0");
   CHECK(this->shownValue(this->oscillator, "semi") == "0");
   CHECK(this->shownValue(this->oscillator, "fine") == "0.0");
   CHECK(this->shownValue(this->oscillator, "coarse") == "0.00");
@@ -139,4 +140,46 @@ TEST_CASE_FIXTURE(OscillatorFixture, "Экран рисует волну и сд
   CHECK(this->screen() == screen);
   CHECK(screen->getType() == WAVE_TYPE::SIN);
   CHECK(screen->getPhaseOffset() == doctest::Approx(0.25f));
+}
+
+TEST_CASE_FIXTURE(OscillatorFixture, "Подсветка цели провода видна на каждом поле, и на Wave с пластиной (D-108)") {
+  // Пластина рисуется поверх фона: у поля с ней подсветка должна менять слои декоратора, а не только фон
+  const auto readDecorator = [](Rml::Element* element) {
+    const Rml::Property* property = element->GetProperty(Rml::PropertyId::Decorator);
+
+    return property ? property->Get<Rml::DecoratorsPtr>() : Rml::DecoratorsPtr();
+  };
+
+  Rml::ElementList fields;
+
+  this->block(this->oscillator)->QuerySelectorAll(fields, "value-field");
+  REQUIRE(fields.size() == 7);
+
+  std::vector<Rml::DecoratorsPtr> decorators;
+  std::vector<Rml::Colourb> backgrounds;
+
+  for (Rml::Element* field : fields) {
+    decorators.push_back(readDecorator(field));
+    backgrounds.push_back(field->GetComputedValues().background_color());
+  }
+
+  const Rml::Vector2f port = this->center(this->port(this->findModule("env"), "out", "modulation"));
+
+  this->moveMouse(port);
+  this->press();
+  this->moveMouse(port + Rml::Vector2f(40.0f, 40.0f));
+  this->moveMouse(port + Rml::Vector2f(80.0f, 80.0f));
+
+  for (size_t index = 0; index < fields.size(); index++) {
+    CAPTURE(fields[index]->GetAttribute<Rml::String>("data-parameter", ""));
+    REQUIRE(fields[index]->IsClassSet("legal"));
+
+    if (decorators[index]) {
+      CHECK(readDecorator(fields[index]) != decorators[index]);
+    } else {
+      CHECK(fields[index]->GetComputedValues().background_color() != backgrounds[index]);
+    }
+  }
+
+  this->release();
 }

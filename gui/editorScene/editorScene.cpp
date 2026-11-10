@@ -395,7 +395,7 @@ void EditorScene::addStepButton(Rml::Element* parent, ModuleId module, const std
 
 /**
  * Лицевая сторона осциллятора, как на референсе (D-108): волна переключается стрелками, на экране поля высоты тона
- * сверху и фазы снизу, под экраном ряд ручек, панорама и громкость отделены чертой.
+ * (октава, полутоны, центы, плавный сдвиг) сверху и фазы снизу, под экраном ряд ручек, панорама и громкость отделены чертой.
  * Параметр, которому здесь не нашлось места, всё равно получает ручку в ряду ниже: так он не пропадёт из редактора
  */
 void EditorScene::buildOscillatorFace(Rml::Element* body, const ModuleInstance& module) {
@@ -431,9 +431,10 @@ void EditorScene::buildOscillatorFace(Rml::Element* body, const ModuleInstance& 
   Rml::Element* screen = addElement(body, "div", "osc-screen");
   Rml::Element* pitch = addElement(screen, "div", "field-row");
 
-  addField(pitch, "semi", "SEMI", "field");
-  addField(pitch, "fine", "FINE", "field");
-  addField(pitch, "coarse", "CRS", "field");
+  addField(pitch, "octave", "OCT", "field pitch-octave");
+  addField(pitch, "semi", "SEM", "field pitch-semi");
+  addField(pitch, "fine", "FIN", "field pitch-fine");
+  addField(pitch, "coarse", "CRS", "field pitch-coarse");
 
   this->screens.push_back({ dynamic_cast<WaveScreen*>(addElement(screen, "wave-screen", "wave-screen")), module.id });
 
