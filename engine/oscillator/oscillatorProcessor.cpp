@@ -1,7 +1,9 @@
 #include "./oscillatorProcessor.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
+#include <numbers>
 
 #include "../../tools/tools.h"
 
@@ -11,13 +13,29 @@ namespace {
   constexpr uint32_t PARAM_SEMI = 1;
   constexpr uint32_t PARAM_FINE = 2;
   constexpr uint32_t PARAM_COARSE = 3;
-  constexpr uint32_t PARAM_LEVEL = 4;
+  constexpr uint32_t PARAM_PAN = 4;
+  constexpr uint32_t PARAM_LEVEL = 5;
+
+  constexpr float PAN_RANGE = 100.0f;
 
   // Выше этой доли частоты дискретизации шаг фазы перестаёт быть корректным
   constexpr float MAX_FREQUENCY_RATIO = 0.49f;
 
   std::unique_ptr<ModuleProcessor> createOscillatorProcessor() {
     return std::make_unique<OscillatorProcessor>();
+  }
+
+  /**
+   * Усиление каналов по закону постоянной мощности, в центре оба ровно 1 (D-104).
+   * √2·cos(π/4 + φ) = cos φ − sin φ: при φ = 0 это точная единица, звук без панорамы не меняется
+   */
+  void toPanGains(float pan, float& left, float& right) {
+    const float angle = pan / PAN_RANGE * std::numbers::pi_v<float> / 4.0f;
+    const float cosine = std::cos(angle);
+    const float sine = std::sin(angle);
+
+    left = cosine - sine;
+    right = cosine + sine;
   }
 }
 
@@ -66,6 +84,14 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .isModulatable = true,
     },
     {
+      .key = "pan",
+      .name = "Pan",
+      .minValue = -PAN_RANGE,
+      .maxValue = PAN_RANGE,
+      .defaultValue = 0.0f,
+      .isModulatable = true,
+    },
+    {
       .key = "level",
       .name = "Level",
       .minValue = 0.0f,
@@ -95,6 +121,7 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   const ParameterRamp& coarse = chunk.parameters[PARAM_COARSE];
   const ParameterRamp& fine = chunk.parameters[PARAM_FINE];
   const ParameterRamp& level = chunk.parameters[PARAM_LEVEL];
+  const ParameterRamp& pan = chunk.parameters[PARAM_PAN];
   AudioBuffer& output = *chunk.outputs[0];
 
   // Ступенчатые параметры меняются на границе куска, без интерполяции (D-025)
@@ -108,12 +135,19 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
     this->toFrequency(pitch + coarse.end + fine.end / 100.0f),
   };
 
+  // Синус и косинус тоже только на концах куска
+  ParameterRamp leftGain{};
+  ParameterRamp rightGain{};
+
+  toPanGains(pan.start, leftGain.start, rightGain.start);
+  toPanGains(pan.end, leftGain.end, rightGain.end);
+
   for (uint32_t frame = 0; frame < chunk.frames; frame++) {
     this->oscillator.setFreq(chunk.at(frequency, frame));
     this->oscillator.setVolume(chunk.at(level, frame));
     this->oscillator.doSample();
 
-    output.left[frame] = this->oscillator.currentSample;
-    output.right[frame] = this->oscillator.currentSample;
+    output.left[frame] = this->oscillator.currentSample * chunk.at(leftGain, frame);
+    output.right[frame] = this->oscillator.currentSample * chunk.at(rightGain, frame);
   }
 }

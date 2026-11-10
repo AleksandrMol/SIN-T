@@ -7,7 +7,7 @@
 extern const ModuleDescriptor OSCILLATOR_DESCRIPTOR;
 
 /**
- * Осциллятор как модуль графа. Сигнал моно, в оба канала идёт одно и то же
+ * Осциллятор как модуль графа. Волна моно, по каналам её разводит панорама (D-104)
  */
 class OscillatorProcessor : public ModuleProcessor {
   public:

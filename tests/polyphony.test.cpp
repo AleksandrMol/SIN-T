@@ -4,8 +4,10 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "../engine/defaultPreset/defaultPreset.h"
@@ -103,7 +105,7 @@ namespace {
       this->engine.applyModel(*this->model);
     }
 
-    Samples run(uint32_t frames, uint32_t blockSize = 256) {
+    std::pair<Samples, Samples> runStereo(uint32_t frames, uint32_t blockSize = 256) {
       Samples left(frames);
       Samples right(frames);
 
@@ -112,6 +114,12 @@ namespace {
 
         this->engine.process(left.data() + done, right.data() + done, count);
       }
+
+      return { std::move(left), std::move(right) };
+    }
+
+    Samples run(uint32_t frames, uint32_t blockSize = 256) {
+      auto [left, right] = this->runStereo(frames, blockSize);
 
       CHECK(left == right);
 
@@ -275,6 +283,90 @@ TEST_CASE_FIXTURE(PolyFixture, "Осциллятор вне генератора
   this->engine.noteOn(note(KEY_A5), 1.0f);
 
   CHECK(std::abs(countRisingCrossings(this->run((uint32_t)SAMPLE_RATE)) - 440) <= 1);
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Панорама сохраняет мощность, в центре звук прежний (D-104)") {
+  const ModuleId osc = this->add("oscillator");
+
+  this->set(osc, "wave", (float)WAVE_TYPE::SIN);
+  this->set(osc, "level", 0.5f);
+  this->connect(osc, this->model->getOutputId());
+
+  float pan = 0.0f;
+
+  SUBCASE("Центр") {
+    pan = 0.0f;
+  }
+
+  SUBCASE("Левый край") {
+    pan = -100.0f;
+  }
+
+  SUBCASE("Половина вправо") {
+    pan = 50.0f;
+  }
+
+  SUBCASE("Почти правый край") {
+    pan = 90.0f;
+  }
+
+  CAPTURE(pan);
+  this->set(osc, "pan", pan);
+  this->apply();
+
+  // Синус 440 Гц: за 4800 сэмплов пик успевает попасть почти на вершину
+  const auto [left, right] = this->runStereo(SETTLE_FRAMES + 4800);
+  const float leftPeak = peak(Samples(left.begin() + SETTLE_FRAMES, left.end()));
+  const float rightPeak = peak(Samples(right.begin() + SETTLE_FRAMES, right.end()));
+  const float angle = (pan / 100.0f + 1.0f) * std::numbers::pi_v<float> / 4.0f;
+
+  CHECK(leftPeak == doctest::Approx(0.5f * std::numbers::sqrt2_v<float> * std::cos(angle)).epsilon(0.001));
+  CHECK(rightPeak == doctest::Approx(0.5f * std::numbers::sqrt2_v<float> * std::sin(angle)).epsilon(0.001));
+
+  // Сумма мощностей каналов как у прежнего моно, где каждый канал был 0,5
+  CHECK(leftPeak * leftPeak + rightPeak * rightPeak == doctest::Approx(0.5f).epsilon(0.002));
+
+  if (pan == 0.0f) {
+    CHECK(left == right);
+  }
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Панорама на лету меняется плавно, без ступенек на границах кусков") {
+  const ModuleId osc = this->add("oscillator");
+
+  this->set(osc, "wave", (float)WAVE_TYPE::SIN);
+  this->set(osc, "level", 0.5f);
+  this->connect(osc, this->model->getOutputId());
+  this->apply();
+  this->runStereo(SETTLE_FRAMES);
+
+  const auto& parameters = this->model->findModule(osc)->descriptor->parameters;
+  const auto pan = std::ranges::find(parameters, std::string("pan"), &ParameterDescriptor::key);
+
+  REQUIRE(pan != parameters.end());
+  this->engine.setParameter(osc, (uint32_t)(pan - parameters.begin()), 100.0f);
+
+  const auto [left, right] = this->runStereo(SETTLE_FRAMES);
+
+  // L = s·(cos φ − sin φ), R = s·(cos φ + sin φ), поэтому (R − L) / (R + L) = tg φ, где сигнал не у нуля.
+  // Сглаживание ~10 мс ведёт tg φ от 0 до 1 за ~15 кусков: без интерполяции внутри куска шаг был бы ~0,07
+  float previous = 0.0f;
+  float largestStep = 0.0f;
+
+  for (size_t i = 0; i < left.size(); i++) {
+    if (std::fabs(left[i] + right[i]) < 0.2f) {
+      continue;
+    }
+
+    const float tangent = (right[i] - left[i]) / (right[i] + left[i]);
+
+    CHECK(tangent >= previous - 1e-4f);
+    largestStep = std::fmax(largestStep, tangent - previous);
+    previous = tangent;
+  }
+
+  CHECK(previous == doctest::Approx(1.0f).epsilon(0.001));
+  CHECK(largestStep < 0.035f);
 }
 
 TEST_CASE_FIXTURE(PolyFixture, "Самая высокая нота с максимальным сдвигом остаётся в пределах сигнала") {
