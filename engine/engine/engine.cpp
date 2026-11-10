@@ -248,6 +248,16 @@ void Engine::reset() {
 
   for (ModuleProcessor* processor : this->plan->main.processors[0]) {
     processor->reset();
+    processor->rewind();
+  }
+
+  // Процессоры голосов берутся из плана: таблицы генератора меняет главный поток
+  for (const PlanGenerator& generator : this->plan->generators) {
+    for (const std::vector<ModuleProcessor*>& voice : generator.subgraph->processors) {
+      for (ModuleProcessor* processor : voice) {
+        processor->rewind();
+      }
+    }
   }
 
   this->pitchBend = 0.0f;

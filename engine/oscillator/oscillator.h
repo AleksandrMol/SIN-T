@@ -23,18 +23,21 @@ class Oscillator {
     void setSampleRate(float sampleRate);
     void setVolume(float volume);
     void setFreq(float freq);
+    void setPhase(float phase);
+    void setPhaseOffset(float offset);
 
   private:
     WAVE_TYPE waveType;
     float sampleRate;
     float freq;
     float phase;
+    float phaseOffset;
     float phaseStep;
     float volume;
 
     void setPhaseStep();
     float polyBlep(float phase, float phaseStep);
-    float calculateSaw();
-    float calculateSquare();
-    float calculateWave();
+    float calculateSaw(float phase);
+    float calculateSquare(float phase);
+    float calculateWave(float phase);
 };

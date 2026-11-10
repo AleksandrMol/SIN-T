@@ -13,10 +13,14 @@ namespace {
   constexpr uint32_t PARAM_SEMI = 1;
   constexpr uint32_t PARAM_FINE = 2;
   constexpr uint32_t PARAM_COARSE = 3;
-  constexpr uint32_t PARAM_PAN = 4;
-  constexpr uint32_t PARAM_LEVEL = 5;
+  constexpr uint32_t PARAM_PHASE = 4;
+  constexpr uint32_t PARAM_RAND = 5;
+  constexpr uint32_t PARAM_PAN = 6;
+  constexpr uint32_t PARAM_LEVEL = 7;
 
   constexpr float PAN_RANGE = 100.0f;
+  constexpr float FULL_CYCLE_DEGREES = 360.0f;
+  constexpr float PERCENT = 100.0f;
 
   // Выше этой доли частоты дискретизации шаг фазы перестаёт быть корректным
   constexpr float MAX_FREQUENCY_RATIO = 0.49f;
@@ -84,6 +88,25 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .isModulatable = true,
     },
     {
+      .key = "phase",
+      .name = "Phase",
+      .minValue = 0.0f,
+      .maxValue = FULL_CYCLE_DEGREES,
+      .defaultValue = 0.0f,
+      .unit = "°",
+      .isModulatable = true,
+    },
+    {
+      // По умолчанию каждая нота со случайной фазы: решение пользователя, звук старых пресетов изменился (D-105)
+      .key = "rand",
+      .name = "Rand",
+      .minValue = 0.0f,
+      .maxValue = PERCENT,
+      .defaultValue = PERCENT,
+      .unit = "%",
+      .isModulatable = true,
+    },
+    {
       .key = "pan",
       .name = "Pan",
       .minValue = -PAN_RANGE,
@@ -109,8 +132,17 @@ void OscillatorProcessor::prepare(float sampleRate) {
   this->maxFrequency = sampleRate * MAX_FREQUENCY_RATIO;
 }
 
+void OscillatorProcessor::seed(uint64_t seed) {
+  this->random.setSeed(seed);
+}
+
+void OscillatorProcessor::rewind() {
+  this->random.rewind();
+}
+
 void OscillatorProcessor::reset() {
   this->oscillator.stopWave();
+  this->isStarting = true;
 }
 
 float OscillatorProcessor::toFrequency(float pitch) const {
@@ -122,7 +154,14 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   const ParameterRamp& fine = chunk.parameters[PARAM_FINE];
   const ParameterRamp& level = chunk.parameters[PARAM_LEVEL];
   const ParameterRamp& pan = chunk.parameters[PARAM_PAN];
+  const ParameterRamp& phase = chunk.parameters[PARAM_PHASE];
   AudioBuffer& output = *chunk.outputs[0];
+
+  // Число берётся и при Rand 0: так последовательность случайных фаз не зависит от значения Rand
+  if (this->isStarting) {
+    this->oscillator.setPhase(chunk.parameters[PARAM_RAND].start / PERCENT * this->random.nextUnit());
+    this->isStarting = false;
+  }
 
   // Ступенчатые параметры меняются на границе куска, без интерполяции (D-025)
   this->oscillator.setWave((WAVE_TYPE)chunk.parameters[PARAM_WAVE].end);
@@ -145,6 +184,7 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   for (uint32_t frame = 0; frame < chunk.frames; frame++) {
     this->oscillator.setFreq(chunk.at(frequency, frame));
     this->oscillator.setVolume(chunk.at(level, frame));
+    this->oscillator.setPhaseOffset(chunk.at(phase, frame) / FULL_CYCLE_DEGREES);
     this->oscillator.doSample();
 
     output.left[frame] = this->oscillator.currentSample * chunk.at(leftGain, frame);

@@ -8,6 +8,7 @@ Oscillator::Oscillator() {
   this->freq = 440.0f;
   this->volume = 0.1f;
   this->phase = 0.0f;
+  this->phaseOffset = 0.0f;
   this->currentSample = 0.0f;
 
   this->setPhaseStep();
@@ -53,6 +54,20 @@ void Oscillator::setFreq(float freq) {
 };
 
 /**
+ * Поставить фазу, доля периода 0..1. Начало ноты (D-105)
+ */
+void Oscillator::setPhase(float phase) {
+  this->phase = phase;
+}
+
+/**
+ * Сдвиг фазы, доля периода 0..1. Действует сразу, в том числе на звучащую ноту (D-105)
+ */
+void Oscillator::setPhaseOffset(float offset) {
+  this->phaseOffset = offset;
+}
+
+/**
  * Установить тип волны
  */
 void Oscillator::setWave(WAVE_TYPE waveType) {
@@ -88,10 +103,10 @@ float Oscillator::polyBlep(float phase, float phaseStep) {
 /**
  * Метод вычисления волны пилы
  */
-float Oscillator::calculateSaw() {
-  float nativeSaw = 2.0f * this->phase - 1.0f;
+float Oscillator::calculateSaw(float phase) {
+  float nativeSaw = 2.0f * phase - 1.0f;
 
-  float output = nativeSaw - polyBlep(this->phase, this->phaseStep);
+  float output = nativeSaw - polyBlep(phase, this->phaseStep);
 
   return output;
 }
@@ -99,13 +114,13 @@ float Oscillator::calculateSaw() {
 /**
  * Метод вычисления волны квадрата
  */
-float Oscillator::calculateSquare()
+float Oscillator::calculateSquare(float phase)
 {
-  float value = this->phase < 0.5f ? 1.0f : -1.0f;
+  float value = phase < 0.5f ? 1.0f : -1.0f;
 
-  value += polyBlep(this->phase, this->phaseStep);
+  value += polyBlep(phase, this->phaseStep);
 
-  float shiftedPhase = this->phase + 0.5f;
+  float shiftedPhase = phase + 0.5f;
 
   if (shiftedPhase >= 1.0f) {
     shiftedPhase -= 1.0f;
@@ -119,16 +134,16 @@ float Oscillator::calculateSquare()
 /**
  * Метод для высчитывания волн
  */
-float Oscillator::calculateWave() {
+float Oscillator::calculateWave(float phase) {
   switch (this->waveType) {
     case WAVE_TYPE::SIN:
-      return std::sin(2.0f * std::numbers::pi_v<float> * this->phase) * this->volume;
+      return std::sin(2.0f * std::numbers::pi_v<float> * phase) * this->volume;
     case WAVE_TYPE::SQR:
-      return this->calculateSquare() * this->volume;
+      return this->calculateSquare(phase) * this->volume;
     case WAVE_TYPE::SAW:
-      return this->calculateSaw() * this->volume;
+      return this->calculateSaw(phase) * this->volume;
     case WAVE_TYPE::TNG:
-      return (this->phase < 0.5f ? (4.0f * this->phase - 1.0f) : (3.0f - 4.0f * this->phase)) * this->volume;
+      return (phase < 0.5f ? (4.0f * phase - 1.0f) : (3.0f - 4.0f * phase)) * this->volume;
   }
   return 0.0f; 
 }
@@ -137,7 +152,15 @@ float Oscillator::calculateWave() {
  * Высчитывает и меняет значение текущего семпла
  */
 void Oscillator::doSample() {
-  this->currentSample = this->calculateWave();
+  // Сдвиг не больше периода, поэтому одного вычитания хватает. При нулевом сдвиге фаза та же до бита.
+  // Пока сдвиг меняется, настоящий шаг фазы отличается от phaseStep и polyBLEP сглаживает разрыв чуть неточно
+  float shifted = this->phase + this->phaseOffset;
+
+  if (shifted >= 1.0f) {
+    shifted -= 1.0f;
+  }
+
+  this->currentSample = this->calculateWave(shifted);
 
   this->phase += this->phaseStep;
 
