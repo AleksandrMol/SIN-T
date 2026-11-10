@@ -140,6 +140,14 @@ TEST_CASE("Число знаков задаётся описанием, град
   CHECK(formatParameter(GAIN, -0.0001f) == "0.000 dB");
   CHECK(formatParameter(fine, -0.06f) == "-0.1 ct");
 
+  // Ровно на половине последнего знака округление тоже даёт ноль: минус у нуля не остаётся
+  const ParameterDescriptor pan = { .key = "pan", .name = "Pan", .minValue = -100.0f, .maxValue = 100.0f, .defaultValue = 0.0f, .decimals = 0 };
+  const ParameterDescriptor coarse = { .key = "coarse", .name = "Coarse", .minValue = -48.0f, .maxValue = 48.0f, .defaultValue = 0.0f, .unit = "st", .decimals = 2 };
+
+  CHECK(formatParameter(pan, -0.5f) == "0");
+  CHECK(formatParameter(coarse, -0.005f) == "0.00 st");
+  CHECK(formatParameter(pan, -0.6f) == "-1");
+
   CHECK(parseParameter(phase, "180°") == 180.0f);
   CHECK(parseParameter(rand, "55%") == 55.0f);
 }
