@@ -15,12 +15,19 @@ namespace {
   constexpr uint32_t PARAM_COARSE = 3;
   constexpr uint32_t PARAM_PHASE = 4;
   constexpr uint32_t PARAM_RAND = 5;
-  constexpr uint32_t PARAM_PAN = 6;
-  constexpr uint32_t PARAM_LEVEL = 7;
+  constexpr uint32_t PARAM_UNISON = 6;
+  constexpr uint32_t PARAM_DETUNE = 7;
+  constexpr uint32_t PARAM_WIDTH = 8;
+  constexpr uint32_t PARAM_PAN = 9;
+  constexpr uint32_t PARAM_LEVEL = 10;
 
   constexpr float PAN_RANGE = 100.0f;
   constexpr float FULL_CYCLE_DEGREES = 360.0f;
   constexpr float PERCENT = 100.0f;
+  constexpr float CENTS_PER_SEMITONE = 100.0f;
+
+  // Подголос появляется, уходит и переезжает на новое место за 10 мс (D-023)
+  constexpr float FADE_SECONDS = 0.01f;
 
   // Выше этой доли частоты дискретизации шаг фазы перестаёт быть корректным
   constexpr float MAX_FREQUENCY_RATIO = 0.49f;
@@ -31,15 +38,42 @@ namespace {
 
   /**
    * Усиление каналов по закону постоянной мощности, в центре оба ровно 1 (D-104).
-   * √2·cos(π/4 + φ) = cos φ − sin φ: при φ = 0 это точная единица, звук без панорамы не меняется
+   * Положение -1..1. √2·cos(π/4 + φ) = cos φ − sin φ: при φ = 0 это точная единица,
+   * звук без панорамы не меняется
    */
-  void toPanGains(float pan, float& left, float& right) {
-    const float angle = pan / PAN_RANGE * std::numbers::pi_v<float> / 4.0f;
+  void toPanGains(float position, float& left, float& right) {
+    const float angle = position * std::numbers::pi_v<float> / 4.0f;
     const float cosine = std::cos(angle);
     const float sine = std::sin(angle);
 
     left = cosine - sine;
     right = cosine + sine;
+  }
+
+  /**
+   * Место подголоса в унисоне: от -1 у самого низкого до 1 у самого высокого, один — посередине
+   */
+  float toSpread(uint32_t index, uint32_t count) {
+    return count > 1 ? -1.0f + 2.0f * (float)index / (float)(count - 1) : 0.0f;
+  }
+
+  /**
+   * 1/√x целиком в double: у sqrtf в glibc 2.43 новая версия символа, и плагин не загрузился бы
+   * в среде flatpak-Reaper (D-107). (float)sqrt((double)x) не годится: GCC сам сводит его к sqrtf
+   */
+  float inverseSqrt(float value) {
+    return (float)(1.0 / std::sqrt((double)value));
+  }
+
+  float moveToward(float value, float target, float step) {
+    return value < target ? std::min(value + step, target) : std::max(value - step, target);
+  }
+
+  /**
+   * Положение подголоса в стерео: Pan сдвигает всю картину, Width раздвигает подголоса
+   */
+  float toPosition(float pan, float width, float spread) {
+    return std::clamp(pan / PAN_RANGE + width / PERCENT * spread, -1.0f, 1.0f);
   }
 }
 
@@ -107,6 +141,34 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .isModulatable = true,
     },
     {
+      .key = "unison",
+      .name = "Unison",
+      .minValue = 1.0f,
+      .maxValue = (float)MAX_UNISON,
+      .defaultValue = 1.0f,
+      .isStepped = true,
+      .isModulatable = true,
+    },
+    {
+      // Насколько крайние подголоса уходят вверх и вниз от ноты, остальные между ними поровну
+      .key = "detune",
+      .name = "Detune",
+      .minValue = 0.0f,
+      .maxValue = 100.0f,
+      .defaultValue = 20.0f,
+      .unit = "ct",
+      .isModulatable = true,
+    },
+    {
+      .key = "width",
+      .name = "Width",
+      .minValue = 0.0f,
+      .maxValue = PERCENT,
+      .defaultValue = PERCENT,
+      .unit = "%",
+      .isModulatable = true,
+    },
+    {
       .key = "pan",
       .name = "Pan",
       .minValue = -PAN_RANGE,
@@ -128,8 +190,12 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
 };
 
 void OscillatorProcessor::prepare(float sampleRate) {
-  this->oscillator.setSampleRate(sampleRate);
+  for (UnisonVoice& voice : this->voices) {
+    voice.oscillator.setSampleRate(sampleRate);
+  }
+
   this->maxFrequency = sampleRate * MAX_FREQUENCY_RATIO;
+  this->fadeStep = 1.0f / (FADE_SECONDS * sampleRate);
 }
 
 void OscillatorProcessor::seed(uint64_t seed) {
@@ -141,7 +207,10 @@ void OscillatorProcessor::rewind() {
 }
 
 void OscillatorProcessor::reset() {
-  this->oscillator.stopWave();
+  for (UnisonVoice& voice : this->voices) {
+    voice.oscillator.stopWave();
+  }
+
   this->isStarting = true;
 }
 
@@ -149,45 +218,121 @@ float OscillatorProcessor::toFrequency(float pitch) const {
   return std::min(midiToFreq(pitch), this->maxFrequency);
 }
 
+/**
+ * Подголос начинает звучать со своей случайной фазы (D-105)
+ */
+void OscillatorProcessor::startVoice(UnisonVoice& voice, float rand) {
+  voice.oscillator.setPhase(rand / PERCENT * this->random.nextUnit());
+  voice.isActive = true;
+}
+
 void OscillatorProcessor::process(const ProcessChunk& chunk) {
   const ParameterRamp& coarse = chunk.parameters[PARAM_COARSE];
   const ParameterRamp& fine = chunk.parameters[PARAM_FINE];
-  const ParameterRamp& level = chunk.parameters[PARAM_LEVEL];
+  const ParameterRamp& detune = chunk.parameters[PARAM_DETUNE];
+  const ParameterRamp& width = chunk.parameters[PARAM_WIDTH];
   const ParameterRamp& pan = chunk.parameters[PARAM_PAN];
+  const ParameterRamp& level = chunk.parameters[PARAM_LEVEL];
   const ParameterRamp& phase = chunk.parameters[PARAM_PHASE];
+  const float rand = chunk.parameters[PARAM_RAND].start;
   AudioBuffer& output = *chunk.outputs[0];
 
-  // Число берётся и при Rand 0: так последовательность случайных фаз не зависит от значения Rand
+  // Ступенчатые параметры меняются на границе куска, без интерполяции (D-025)
+  const auto wave = (WAVE_TYPE)chunk.parameters[PARAM_WAVE].end;
+  const auto count = (uint32_t)chunk.parameters[PARAM_UNISON].end;
+  const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_SEMI].end;
+
+  // Нота начинается сразу со всеми подголосами. Числа берутся по порядку подголосов и при Rand 0:
+  // при одном подголоске последовательность та же, что до унисона
   if (this->isStarting) {
-    this->oscillator.setPhase(chunk.parameters[PARAM_RAND].start / PERCENT * this->random.nextUnit());
+    for (uint32_t index = 0; index < MAX_UNISON; index++) {
+      UnisonVoice& voice = this->voices[index];
+
+      voice.isActive = false;
+      voice.gain = index < count ? 1.0f : 0.0f;
+      voice.spread = toSpread(index, count);
+
+      if (index < count) {
+        this->startVoice(voice, rand);
+      }
+    }
+
     this->isStarting = false;
   }
 
-  // Ступенчатые параметры меняются на границе куска, без интерполяции (D-025)
-  this->oscillator.setWave((WAVE_TYPE)chunk.parameters[PARAM_WAVE].end);
+  // Значения на концах участка сетки. Состояние подголоса меняется только в конце участка,
+  // поэтому все куски одного участка видят одни и те же концы, как бы хост ни резал блок
+  const float segmentStep = this->fadeStep * (float)chunk.rampFrames;
+  const bool isSegmentEnd = chunk.rampOffset + chunk.frames == chunk.rampFrames;
+  std::array<ParameterRamp, MAX_UNISON> gains{};
+  std::array<ParameterRamp, MAX_UNISON> spreads{};
+  ParameterRamp totalGain{};
 
-  const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_SEMI].end;
+  for (uint32_t index = 0; index < MAX_UNISON; index++) {
+    UnisonVoice& voice = this->voices[index];
+    const bool isWanted = index < count;
 
-  // Экспонента считается только на концах куска, между ними частота интерполируется
-  const ParameterRamp frequency = {
-    this->toFrequency(pitch + coarse.start + fine.start / 100.0f),
-    this->toFrequency(pitch + coarse.end + fine.end / 100.0f),
-  };
+    // Новый подголос встаёт сразу на своё место и плавно набирает громкость
+    if (isWanted && !voice.isActive) {
+      voice.spread = toSpread(index, count);
+      this->startVoice(voice, rand);
+    }
 
-  // Синус и косинус тоже только на концах куска
-  ParameterRamp leftGain{};
-  ParameterRamp rightGain{};
+    if (!voice.isActive) {
+      continue;
+    }
 
-  toPanGains(pan.start, leftGain.start, rightGain.start);
-  toPanGains(pan.end, leftGain.end, rightGain.end);
+    gains[index] = { voice.gain, moveToward(voice.gain, isWanted ? 1.0f : 0.0f, segmentStep) };
+    spreads[index] = { voice.spread, moveToward(voice.spread, toSpread(index, count), 2.0f * segmentStep) };
+    totalGain.start += gains[index].start;
+    totalGain.end += gains[index].end;
+  }
 
-  for (uint32_t frame = 0; frame < chunk.frames; frame++) {
-    this->oscillator.setFreq(chunk.at(frequency, frame));
-    this->oscillator.setVolume(chunk.at(level, frame));
-    this->oscillator.setPhaseOffset(chunk.at(phase, frame) / FULL_CYCLE_DEGREES);
-    this->oscillator.doSample();
+  // Сумма подголосов делится на √N: громкость унисона почти не зависит от их числа.
+  // Первый подголос нужен всегда, поэтому сумма не меньше 1
+  const ParameterRamp normalize = { inverseSqrt(totalGain.start), inverseSqrt(totalGain.end) };
 
-    output.left[frame] = this->oscillator.currentSample * chunk.at(leftGain, frame);
-    output.right[frame] = this->oscillator.currentSample * chunk.at(rightGain, frame);
+  std::fill_n(output.left.begin(), chunk.frames, 0.0f);
+  std::fill_n(output.right.begin(), chunk.frames, 0.0f);
+
+  for (uint32_t index = 0; index < MAX_UNISON; index++) {
+    UnisonVoice& voice = this->voices[index];
+
+    if (!voice.isActive) {
+      continue;
+    }
+
+    const bool isWanted = index < count;
+    const ParameterRamp& gain = gains[index];
+    const ParameterRamp& spread = spreads[index];
+
+    // Экспонента, синус и косинус считаются только на концах участка, между ними значения идут по прямой
+    const ParameterRamp frequency = {
+      this->toFrequency(pitch + coarse.start + fine.start / CENTS_PER_SEMITONE + detune.start / CENTS_PER_SEMITONE * spread.start),
+      this->toFrequency(pitch + coarse.end + fine.end / CENTS_PER_SEMITONE + detune.end / CENTS_PER_SEMITONE * spread.end),
+    };
+
+    ParameterRamp leftGain{};
+    ParameterRamp rightGain{};
+
+    toPanGains(toPosition(pan.start, width.start, spread.start), leftGain.start, rightGain.start);
+    toPanGains(toPosition(pan.end, width.end, spread.end), leftGain.end, rightGain.end);
+    voice.oscillator.setWave(wave);
+
+    for (uint32_t frame = 0; frame < chunk.frames; frame++) {
+      voice.oscillator.setFreq(chunk.at(frequency, frame));
+      voice.oscillator.setVolume(chunk.at(level, frame) * chunk.at(normalize, frame) * chunk.at(gain, frame));
+      voice.oscillator.setPhaseOffset(chunk.at(phase, frame) / FULL_CYCLE_DEGREES);
+      voice.oscillator.doSample();
+
+      output.left[frame] += voice.oscillator.currentSample * chunk.at(leftGain, frame);
+      output.right[frame] += voice.oscillator.currentSample * chunk.at(rightGain, frame);
+    }
+
+    if (isSegmentEnd) {
+      voice.gain = gain.end;
+      voice.spread = spread.end;
+      voice.isActive = isWanted || voice.gain > 0.0f;
+    }
   }
 }

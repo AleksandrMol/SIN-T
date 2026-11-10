@@ -161,6 +161,23 @@ namespace {
     return crossings;
   }
 
+  float rms(const Samples& samples) {
+    double sum = 0.0;
+
+    for (const float sample : samples) {
+      sum += (double)sample * sample;
+    }
+
+    return (float)std::sqrt(sum / (double)samples.size());
+  }
+
+  /**
+   * Хвост после установки: сглаживание и затухания уже закончились
+   */
+  Samples settled(const Samples& samples) {
+    return Samples(samples.begin() + SETTLE_FRAMES, samples.end());
+  }
+
   float maxJump(const Samples& samples) {
     float result = 0.0f;
 
@@ -517,6 +534,166 @@ TEST_CASE_FIXTURE(PolyFixture, "Случайная фаза своя у кажд
   }
 
   CHECK(peak(this->run(4800)) < 0.49f);
+}
+
+namespace {
+  /**
+   * Осциллятор главного графа на выходе: звучит на A4 без нот
+   */
+  ModuleId addMainOscillator(PolyFixture& fixture, WAVE_TYPE wave, float rand) {
+    const ModuleId osc = fixture.add("oscillator");
+
+    fixture.set(osc, "wave", (float)wave);
+    fixture.set(osc, "level", 0.5f);
+    fixture.set(osc, "rand", rand);
+    fixture.connect(osc, fixture.model->getOutputId());
+
+    return osc;
+  }
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Унисон: подголоса расстроены на ±Detune, при Width 100 крайние в краях (D-106)") {
+  const ModuleId osc = addMainOscillator(*this, WAVE_TYPE::SIN, 0.0f);
+
+  this->set(osc, "unison", 2.0f);
+  this->set(osc, "detune", 50.0f);
+  this->set(osc, "width", 100.0f);
+  this->apply();
+
+  // Нижний подголос целиком слева, верхний справа: каждый канал — один синус
+  const auto [left, right] = this->runStereo(SETTLE_FRAMES + (uint32_t)SAMPLE_RATE);
+  const Samples leftTail = settled(left);
+  const Samples rightTail = settled(right);
+
+  CHECK(std::fabs((float)countRisingCrossings(leftTail) - 440.0f * std::pow(2.0f, -0.5f / 12.0f)) <= 1.5f);
+  CHECK(std::fabs((float)countRisingCrossings(rightTail) - 440.0f * std::pow(2.0f, 0.5f / 12.0f)) <= 1.5f);
+
+  // Каждый подголос 0,5 / √2, а в крае канал получает ×√2 (D-104)
+  CHECK(peak(leftTail) == doctest::Approx(0.5f).epsilon(0.002));
+  CHECK(peak(rightTail) == doctest::Approx(0.5f).epsilon(0.002));
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Громкость унисона почти не зависит от числа подголосов (D-106)") {
+  const ModuleId osc = addMainOscillator(*this, WAVE_TYPE::SIN, 100.0f);
+  float count = 1.0f;
+
+  SUBCASE("1") {
+    count = 1.0f;
+  }
+
+  SUBCASE("2") {
+    count = 2.0f;
+  }
+
+  SUBCASE("5") {
+    count = 5.0f;
+  }
+
+  SUBCASE("16") {
+    count = 16.0f;
+  }
+
+  CAPTURE(count);
+  this->set(osc, "unison", count);
+  this->set(osc, "detune", 30.0f);
+  this->set(osc, "width", 0.0f);
+  this->apply();
+
+  // Частоты подголосов разные, поэтому за секунду их мощности складываются: как у одного синуса 0,5
+  CHECK(rms(settled(this->run(SETTLE_FRAMES + (uint32_t)SAMPLE_RATE))) == doctest::Approx(0.5f / std::numbers::sqrt2_v<float>).epsilon(0.03));
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Width 0 собирает унисон в моно, у каждого подголоса своя случайная фаза (D-106)") {
+  const ModuleId osc = addMainOscillator(*this, WAVE_TYPE::SIN, 100.0f);
+
+  this->set(osc, "unison", 2.0f);
+  this->set(osc, "detune", 0.0f);
+  this->set(osc, "width", 0.0f);
+
+  // Два синуса одной частоты по 0,5 / √2: в одной фазе дали бы пик 0,707
+  SUBCASE("Rand 100: фазы разные") {
+    this->apply();
+    CHECK(peak(settled(this->run(SETTLE_FRAMES + 4800))) < 0.69f);
+  }
+
+  SUBCASE("Rand 0: фазы одинаковые") {
+    this->set(osc, "rand", 0.0f);
+    this->apply();
+    CHECK(peak(settled(this->run(SETTLE_FRAMES + 4800))) == doctest::Approx(std::numbers::sqrt2_v<float> / 2.0f).epsilon(0.002));
+  }
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Смена Unison во время звука плавная: подголоса появляются, уходят и переезжают без скачков (D-106)") {
+  // Треугольник непрерывен, но в начале периода равен −1: подголосок без затухания дал бы скачок
+  const ModuleId osc = addMainOscillator(*this, WAVE_TYPE::TNG, 0.0f);
+
+  this->set(osc, "detune", 0.0f);
+  this->set(osc, "width", 100.0f);
+  this->apply();
+  this->runStereo(SETTLE_FRAMES);
+
+  // Наклон треугольника 4·440/48000 на единицу амплитуды, а сумма в канале не больше 2
+  constexpr float LARGEST_SLOPE = 0.1f;
+
+  // Скачок без сглаживания зависит от того, где треугольник в момент смены, поэтому смен много и в разных местах
+  uint32_t frames = SETTLE_FRAMES;
+
+  for (const float count : { 8.0f, 3.0f, 1.0f, 5.0f, 2.0f, 16.0f, 4.0f, 1.0f, 7.0f, 2.0f }) {
+    CAPTURE(count);
+    this->setLive(osc, "unison", count);
+    frames += 37;
+
+    const auto [left, right] = this->runStereo(frames);
+
+    CHECK(maxJump(left) < LARGEST_SLOPE);
+    CHECK(maxJump(right) < LARGEST_SLOPE);
+  }
+}
+
+TEST_CASE("Унисон не зависит от размера блока, в том числе при смене числа подголосов: сравнение до бита (D-008, D-106)") {
+  const auto render = [](uint32_t blockSize) {
+    PolyFixture fixture;
+    const ModuleId generator = fixture.add("generator");
+    const ModuleId osc = fixture.add("oscillator", generator);
+
+    fixture.set(osc, "unison", 3.0f);
+    fixture.set(osc, "detune", 30.0f);
+    fixture.set(osc, "width", 70.0f);
+    fixture.connect(osc, fixture.getVoiceOutput(generator));
+    fixture.connect(generator, fixture.model->getOutputId());
+    fixture.apply();
+
+    std::vector<float> result;
+
+    const auto play = [&](uint32_t frames) {
+      const auto [left, right] = fixture.runStereo(frames, blockSize);
+
+      result.insert(result.end(), left.begin(), left.end());
+      result.insert(result.end(), right.begin(), right.end());
+    };
+
+    play(107);
+    fixture.engine.noteOn(note(KEY_A4), 0.8f);
+    play(1003);
+    fixture.setLive(osc, "unison", 7.0f);
+    fixture.setLive(osc, "detune", 60.0f);
+    play(1511);
+    fixture.setLive(osc, "unison", 2.0f);
+    play(1999);
+    fixture.engine.noteOff(note(KEY_A4));
+    play(2000);
+
+    return result;
+  };
+
+  const std::vector<float> reference = render(256);
+
+  REQUIRE(peak(reference) > 0.1f);
+
+  for (const uint32_t blockSize : { 1u, 7u, 33u, 1000u }) {
+    CAPTURE(blockSize);
+    CHECK((render(blockSize) == reference));
+  }
 }
 
 TEST_CASE_FIXTURE(PolyFixture, "Самая высокая нота с максимальным сдвигом остаётся в пределах сигнала") {
