@@ -93,6 +93,7 @@ namespace {
     for (const Command& command : std::initializer_list<Command>{
       SetParameter{ osc, "wave", 1.0f },
       SetParameter{ osc, "level", 0.5f },
+      SetParameter{ osc, "rand", 0.0f }, // Синус с нулевой фазы: в первом сэмпле ноты ноль
       SetParameter{ filter, "cutoff", cutoff },
       SetModuleEnabled{ filter, isFilterEnabled },
       Connect{ { osc, "out", filter, "in" } },

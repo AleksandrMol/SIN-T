@@ -80,6 +80,7 @@ add_library(sint_engine STATIC
   engine/preset/preset.cpp
   engine/presetLibrary/presetLibrary.cpp
   engine/presetMigration/presetMigration.cpp
+  engine/random/random.cpp
   engine/sessionState/sessionState.cpp
   engine/slotTable/slotInbox.cpp
   engine/slotTable/slotOutbox.cpp
@@ -221,6 +222,7 @@ if(SINT_BUILD_TESTS)
     tests/preset.test.cpp
     tests/presetLibrary.test.cpp
     tests/presetMigration.test.cpp
+    tests/random.test.cpp
     tests/slotTable.test.cpp
     tests/synthModel.test.cpp
     tests/tools.test.cpp

@@ -2,14 +2,17 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "../generator/generatorProcessor.h"
 #include "../macros/macrosProcessor.h"
 #include "../modulationCompiler/modulationCompiler.h"
 #include "../planExchange/planExchange.h"
+#include "../random/random.h"
 #include "../stubProcessor/stubProcessor.h"
 
 namespace {
@@ -284,7 +287,16 @@ namespace {
     }
   }
 
-  void syncGraph(const SynthModel& model, const std::set<ModuleId>& members, ModuleSlots& slots, const SlotSync& sync) {
+  // Номер голоса для зерна модулей главного графа: у голосов номера с нуля (D-105)
+  constexpr uint32_t MAIN_GRAPH_VOICE = UINT32_MAX;
+
+  void syncGraph(
+    const SynthModel& model,
+    const std::set<ModuleId>& members,
+    ModuleSlots& slots,
+    const SlotSync& sync,
+    uint32_t voice
+  ) {
     removeMissing(slots, members, sync.exchange);
 
     for (const ModuleId id : members) {
@@ -295,6 +307,7 @@ namespace {
       if (isNew) {
         createProcessor(module, slot, sync.exchange);
         slot.processor->prepare(sync.sampleRate);
+        slot.processor->seed(Random::makeSeed(id, voice));
 
         // Огибающая, появившаяся посреди ноты, начинает атаку, а не молчит до следующей ноты
         if (sync.values == SLOT_VALUES::KEEP) {
@@ -319,8 +332,10 @@ namespace {
 
         const std::set<ModuleId> voiceMembers = findMembers(model, id);
 
-        for (ModuleSlots& voice : slot.generator->getVoiceSlots()) {
-          syncGraph(model, voiceMembers, voice, sync);
+        std::vector<ModuleSlots>& voiceSlots = slot.generator->getVoiceSlots();
+
+        for (uint32_t index = 0; index < voiceSlots.size(); index++) {
+          syncGraph(model, voiceMembers, voiceSlots[index], sync, index);
         }
 
         syncLastOutputs(model, module, voiceMembers, *slot.generator, sync);
@@ -453,7 +468,7 @@ void syncModuleSlots(
   PlanExchange* exchange,
   SLOT_VALUES values
 ) {
-  syncGraph(model, findMembers(model, std::nullopt), slots, { sampleRate, exchange, values });
+  syncGraph(model, findMembers(model, std::nullopt), slots, { sampleRate, exchange, values }, MAIN_GRAPH_VOICE);
 }
 
 TransitionFades findFades(const SynthModel& previous, const SynthModel& next) {

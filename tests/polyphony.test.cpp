@@ -64,6 +64,17 @@ namespace {
       REQUIRE(this->model->apply(SetModuleEnabled{ id, enabled }).has_value());
     }
 
+    /**
+     * Меняет параметр из аудиопотока, как автоматизация хоста: со сглаживанием ~10 мс
+     */
+    void setLive(ModuleId id, const std::string& key, float value) {
+      const auto& parameters = this->model->findModule(id)->descriptor->parameters;
+      const auto parameter = std::ranges::find(parameters, key, &ParameterDescriptor::key);
+
+      REQUIRE(parameter != parameters.end());
+      this->engine.setParameter(id, (uint32_t)(parameter - parameters.begin()), value);
+    }
+
     void connect(ModuleId from, ModuleId to) {
       REQUIRE(this->model->apply(Connect{ { from, "out", to, "in" } }).has_value());
     }
@@ -84,6 +95,7 @@ namespace {
 
       this->set(osc, "wave", (float)WAVE_TYPE::SIN);
       this->set(osc, "level", level);
+      this->set(osc, "rand", 0.0f); // Синус с нулевой фазы: тесты сравнивают с ним
 
       return osc;
     }
@@ -340,11 +352,7 @@ TEST_CASE_FIXTURE(PolyFixture, "Панорама на лету меняется 
   this->apply();
   this->runStereo(SETTLE_FRAMES);
 
-  const auto& parameters = this->model->findModule(osc)->descriptor->parameters;
-  const auto pan = std::ranges::find(parameters, std::string("pan"), &ParameterDescriptor::key);
-
-  REQUIRE(pan != parameters.end());
-  this->engine.setParameter(osc, (uint32_t)(pan - parameters.begin()), 100.0f);
+  this->setLive(osc, "pan", 100.0f);
 
   const auto [left, right] = this->runStereo(SETTLE_FRAMES);
 
@@ -367,6 +375,148 @@ TEST_CASE_FIXTURE(PolyFixture, "Панорама на лету меняется 
 
   CHECK(previous == doctest::Approx(1.0f).epsilon(0.001));
   CHECK(largestStep < 0.035f);
+}
+
+namespace {
+  // Шаг фазы синуса A4 за сэмпл, радианы
+  const float A4_STEP = 2.0f * std::numbers::pi_v<float> * 440.0f / SAMPLE_RATE;
+
+  /**
+   * Фаза синуса в градусах 0..360 по двум соседним сэмплам: s0 = A·sin θ, s1 = A·sin(θ + ω).
+   * Амплитуда не нужна, поэтому затухания и velocity не мешают
+   */
+  float measurePhase(float first, float second, float step) {
+    const float radians = std::atan2(first * std::sin(step), second - first * std::cos(step));
+    const float degrees = radians * 180.0f / std::numbers::pi_v<float>;
+
+    return std::fmod(degrees + 720.0f, 360.0f);
+  }
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Phase сдвигает волну, в том числе у звучащей ноты (D-105)") {
+  const ModuleId first = this->add("oscillator");
+  const ModuleId second = this->add("oscillator");
+
+  for (const ModuleId osc : { first, second }) {
+    this->set(osc, "wave", (float)WAVE_TYPE::SIN);
+    this->set(osc, "level", 0.5f);
+    this->set(osc, "rand", 0.0f);
+    this->connect(osc, this->model->getOutputId());
+  }
+
+  // Сумма двух синусов со сдвигом φ: амплитуда 2·0,5·|cos(φ/2)|
+  const auto check = [&](float shift, float expected) {
+    SUBCASE("Задано до звука") {
+      this->set(second, "phase", shift);
+      this->apply();
+    }
+
+    SUBCASE("Повёрнуто во время звука") {
+      this->apply();
+      this->run(SETTLE_FRAMES);
+      this->setLive(second, "phase", shift);
+    }
+
+    this->run(SETTLE_FRAMES);
+
+    CHECK(std::fabs(peak(this->run(4800)) - expected) < 0.002f);
+  };
+
+  SUBCASE("В фазе") {
+    check(0.0f, 1.0f);
+  }
+
+  SUBCASE("Четверть периода") {
+    check(90.0f, std::numbers::sqrt2_v<float> / 2.0f);
+  }
+
+  SUBCASE("Противофаза") {
+    check(180.0f, 0.0f);
+  }
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Rand разбрасывает начальную фазу ноты от Phase на Rand × 360° (D-105)") {
+  const ModuleId generator = this->add("generator");
+  const ModuleId osc = this->addSine(generator);
+
+  this->connect(osc, this->getVoiceOutput(generator));
+  this->connect(generator, this->model->getOutputId());
+  this->set(osc, "phase", 90.0f);
+
+  float rand = 0.0f;
+
+  SUBCASE("Rand 0: каждая нота с Phase") {
+    rand = 0.0f;
+  }
+
+  SUBCASE("Rand 50: в пределах половины периода") {
+    rand = 50.0f;
+  }
+
+  CAPTURE(rand);
+  this->set(osc, "rand", rand);
+  this->apply();
+
+  // Фаза меряется на 500-м сэмпле ноты и пересчитывается к её началу
+  constexpr uint32_t MEASURE_FRAME = 500;
+  constexpr int NOTE_COUNT = 64;
+  float lowest = 360.0f;
+  float highest = 0.0f;
+  int upperHalf = 0;
+
+  for (int noteIndex = 0; noteIndex < NOTE_COUNT; noteIndex++) {
+    this->engine.noteOn(note(KEY_A4), 1.0f);
+
+    const Samples audio = this->run(MEASURE_FRAME + 2);
+    const float atFrame = measurePhase(audio[MEASURE_FRAME], audio[MEASURE_FRAME + 1], A4_STEP);
+    const float elapsed = std::fmod((float)MEASURE_FRAME * A4_STEP * 180.0f / std::numbers::pi_v<float>, 360.0f);
+    const float start = std::fmod(atFrame - elapsed - 90.0f + 720.0f + 0.5f, 360.0f) - 0.5f;
+
+    lowest = std::fmin(lowest, start);
+    highest = std::fmax(highest, start);
+    upperHalf += start > rand / 100.0f * 180.0f ? 1 : 0;
+
+    this->engine.noteOff(note(KEY_A4));
+    this->run(2000);
+  }
+
+  CHECK(lowest >= -0.5f);
+  CHECK(highest <= rand / 100.0f * 360.0f + 0.5f);
+
+  // Новая фаза у каждой ноты: в верхнюю половину разброса попадает примерно половина нот
+  if (rand > 0.0f) {
+    CHECK(lowest < 20.0f);
+    CHECK(highest > 160.0f);
+    CHECK(upperHalf > NOTE_COUNT / 4);
+    CHECK(upperHalf < NOTE_COUNT * 3 / 4);
+  }
+}
+
+TEST_CASE_FIXTURE(PolyFixture, "Случайная фаза своя у каждого осциллятора голоса и у каждого голоса (D-105)") {
+  const ModuleId generator = this->add("generator");
+  const ModuleId first = this->addSine(generator, 0.25f);
+
+  this->set(first, "rand", 100.0f);
+  this->connect(first, this->getVoiceOutput(generator));
+  this->connect(generator, this->model->getOutputId());
+
+  // С одинаковыми фазами синусы сложились бы в пик ровно 2·0,25 на осциллятор
+  SUBCASE("Два осциллятора в одном голосе") {
+    const ModuleId second = this->addSine(generator, 0.25f);
+
+    this->set(second, "rand", 100.0f);
+    this->connect(second, this->getVoiceOutput(generator));
+    this->apply();
+    this->engine.noteOn(note(KEY_A4), 1.0f);
+  }
+
+  SUBCASE("Два голоса на одной клавише") {
+    this->apply();
+    this->engine.noteOn(note(KEY_A4, 1), 1.0f);
+    this->engine.noteOn(note(KEY_A4, 2), 1.0f);
+  }
+
+  CHECK(peak(this->run(4800)) < 0.49f);
 }
 
 TEST_CASE_FIXTURE(PolyFixture, "Самая высокая нота с максимальным сдвигом остаётся в пределах сигнала") {
