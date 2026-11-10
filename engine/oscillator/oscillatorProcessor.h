@@ -41,7 +41,7 @@ class OscillatorProcessor : public ModuleProcessor {
     Random random;
     float maxFrequency = 0.0f;
     float fadeStep = 0.0f; // Изменение громкости подголоса за сэмпл
-    bool isStarting = true; // Начальная фаза ставится в первом куске: значение Rand приходит только с ним
+    bool isStarting = true; // Подголоса ноты встают в первом куске сразу с полной громкостью: значение Rand приходит только с ним
 
     float toFrequency(float pitch) const;
     void startVoice(UnisonVoice& voice, float rand);

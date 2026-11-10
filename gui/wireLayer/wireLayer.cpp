@@ -6,11 +6,10 @@
 #include <span>
 #include <utility>
 
+#include "../colorTools/colorTools.h"
 #include "../meshBuilder/meshBuilder.h"
 
 namespace {
-  const Rml::Colourb AUDIO_COLOR(61, 141, 232);
-  const Rml::Colourb MODULATION_COLOR(240, 146, 58);
   const Rml::Colourb SELECTED_COLOR(255, 255, 255);
   // Тёмная подложка под проводом: он читается и на светлом металле блоков, и на линиях сетки
   const Rml::Colourb UNDERLAY_COLOR(0, 0, 0, 160);
@@ -97,7 +96,7 @@ namespace {
   }
 
   void drawWire(MeshBuilder& builder, const WireCurve& curve, WIRE_KIND kind, bool isSelected, float scale) {
-    const Rml::Colourb color = isSelected ? SELECTED_COLOR : kind == WIRE_KIND::AUDIO ? AUDIO_COLOR : MODULATION_COLOR;
+    const Rml::Colourb color = isSelected ? SELECTED_COLOR : kind == WIRE_KIND::AUDIO ? ACCENT_COLOR : MODULATION_COLOR;
     std::vector<Rml::Vector2f> points;
 
     points.reserve(curve.size());

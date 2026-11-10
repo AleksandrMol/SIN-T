@@ -1,17 +1,15 @@
 #pragma once
 
-#include <RmlUi/Core.h>
-
-class MeshBuilder;
+#include "../meshElement/meshElement.h"
 
 /**
  * Элемент, который показывает значение параметра: ручка или поле (D-108). Только рисует, ввод обрабатывает редактор.
  * Все значения 0..1 в положении ручки, поэтому логарифмические параметры выглядят равномерно.
  * Сетка строится заново только после смены значения или размера
  */
-class ParameterControl : public Rml::Element {
+class ParameterControl : public MeshElement {
   public:
-    using Rml::Element::Element;
+    using MeshElement::MeshElement;
 
     void setValue(float value);
 
@@ -30,22 +28,11 @@ class ParameterControl : public Rml::Element {
     float getModulationLow() const;
     float getModulationHigh() const;
 
-  protected:
-    void OnRender() override;
-    void OnResize() override;
-
-    /**
-     * Рисует элемент от угла его рамки. scale — dp в пикселях
-     */
-    virtual void build(MeshBuilder& builder, Rml::Vector2f size, float scale) = 0;
-
   private:
     float value = 0.0f;
     float origin = 0.0f;
     float modulationLow = 0.0f;
     float modulationHigh = 0.0f;
-    bool isDirty = true;
-    Rml::Geometry geometry;
 
     void change(float& field, float next);
 };

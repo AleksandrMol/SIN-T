@@ -279,9 +279,7 @@ void EditorView::handleDoubleClick(Rml::Event& event) {
   Rml::Element* target = event.GetTargetElement();
 
   if (const KnobView* view = this->scene.findKnob(target)) {
-    this->backend.beginGesture(view->module, view->parameter->key);
-    this->report(this->backend.apply(SetParameter{ view->module, view->parameter->key, this->backend.getDefaultValue(view->module, *view->parameter) }));
-    this->backend.endGesture(view->module, view->parameter->key);
+    this->setParameterOnce(view->module, view->parameter->key, this->backend.getDefaultValue(view->module, *view->parameter));
     return;
   }
 
@@ -455,14 +453,11 @@ void EditorView::handleScroll(Rml::Event& event) {
   const float wheel = event.GetParameter("wheel_delta_y", 0.0f);
 
   if (const KnobView* view = this->scene.findKnob(target)) {
-    this->backend.beginGesture(view->module, view->parameter->key);
-
     // Колесо у ступенчатого параметра переключает ровно на одну ступень
     const float step = view->parameter->isStepped ? 1.0f / (view->parameter->maxValue - view->parameter->minValue) : WHEEL_STEP;
     const float position = view->knob->getValue() + (wheel < 0.0f ? step : -step);
 
-    this->setKnobValue(*view, position);
-    this->backend.endGesture(view->module, view->parameter->key);
+    this->setParameterOnce(view->module, view->parameter->key, toReal(*view->parameter, position));
     event.StopPropagation();
     return;
   }
@@ -655,6 +650,15 @@ void EditorView::setKnobValue(const KnobView& view, float position) {
   this->report(this->backend.apply(SetParameter{ view.module, view.parameter->key, toReal(*view.parameter, position) }));
 }
 
+/**
+ * Разовая правка: хост видит её отдельным жестом, как короткое движение ручки (D-067)
+ */
+void EditorView::setParameterOnce(ModuleId module, const std::string& parameter, float real) {
+  this->backend.beginGesture(module, parameter);
+  this->report(this->backend.apply(SetParameter{ module, parameter, real }));
+  this->backend.endGesture(module, parameter);
+}
+
 void EditorView::changeKnob(const KnobView& view, float delta, bool isFine) {
   this->drag.value = std::clamp(this->drag.value + delta * (isFine ? FINE_FACTOR : 1.0f), 0.0f, 1.0f);
   this->setKnobValue(view, this->drag.value);
@@ -672,9 +676,7 @@ void EditorView::promptKnobValue(const KnobView& view) {
       return;
     }
 
-    this->backend.beginGesture(module, parameter->key);
-    this->report(this->backend.apply(SetParameter{ module, parameter->key, *value }));
-    this->backend.endGesture(module, parameter->key);
+    this->setParameterOnce(module, parameter->key, *value);
   });
 }
 
@@ -694,9 +696,7 @@ void EditorView::stepParameter(ModuleId module, const std::string& parameter, in
   const int index = (int)std::lround(real - descriptor.minValue);
   const int next = ((index + step) % count + count) % count;
 
-  this->backend.beginGesture(module, parameter);
-  this->report(this->backend.apply(SetParameter{ module, parameter, descriptor.minValue + (float)next }));
-  this->backend.endGesture(module, parameter);
+  this->setParameterOnce(module, parameter, descriptor.minValue + (float)next);
 }
 
 void EditorView::setDepthFromMouse(float mouseX) {

@@ -34,7 +34,7 @@ TEST_CASE_FIXTURE(OscillatorFixture, "У каждого параметра ос�
   for (const ParameterDescriptor& parameter : this->model().findModule(this->oscillator)->descriptor->parameters) {
     CAPTURE(parameter.key);
 
-    const std::string selector = "[data-module=\"" + std::to_string(this->oscillator) + "\"][data-parameter=\"" + parameter.key + "\"]";
+    const std::string selector = cellSelector(this->oscillator, parameter.key);
     const bool isField = std::ranges::find(fields, parameter.key) != fields.end();
 
     CHECK(this->count(selector) == 1);
@@ -144,22 +144,16 @@ TEST_CASE_FIXTURE(OscillatorFixture, "Экран рисует волну и сд
 
 TEST_CASE_FIXTURE(OscillatorFixture, "Подсветка цели провода видна на каждом поле, и на Wave с пластиной (D-108)") {
   // Пластина рисуется поверх фона: у поля с ней подсветка должна менять слои декоратора, а не только фон
-  const auto readDecorator = [](Rml::Element* element) {
-    const Rml::Property* property = element->GetProperty(Rml::PropertyId::Decorator);
-
-    return property ? property->Get<Rml::DecoratorsPtr>() : Rml::DecoratorsPtr();
-  };
-
   Rml::ElementList fields;
 
   this->block(this->oscillator)->QuerySelectorAll(fields, "value-field");
   REQUIRE(fields.size() == 7);
 
-  std::vector<Rml::DecoratorsPtr> decorators;
+  std::vector<Rml::DecoratorsPtr> decoratorsBefore;
   std::vector<Rml::Colourb> backgrounds;
 
   for (Rml::Element* field : fields) {
-    decorators.push_back(readDecorator(field));
+    decoratorsBefore.push_back(this->decorators(field));
     backgrounds.push_back(field->GetComputedValues().background_color());
   }
 
@@ -174,8 +168,8 @@ TEST_CASE_FIXTURE(OscillatorFixture, "Подсветка цели провода
     CAPTURE(fields[index]->GetAttribute<Rml::String>("data-parameter", ""));
     REQUIRE(fields[index]->IsClassSet("legal"));
 
-    if (decorators[index]) {
-      CHECK(readDecorator(fields[index]) != decorators[index]);
+    if (decoratorsBefore[index]) {
+      CHECK(this->decorators(fields[index]) != decoratorsBefore[index]);
     } else {
       CHECK(fields[index]->GetComputedValues().background_color() != backgrounds[index]);
     }

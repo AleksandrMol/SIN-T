@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <set>
 
+#include "../../engine/oscillator/oscillatorProcessor.h"
 #include "../../engine/slotTable/slotTable.h"
 #include "../elementTools/elementTools.h"
 #include "../graphLayout/graphLayout.h"
@@ -18,14 +19,6 @@ namespace {
   constexpr float PORT_FIRST_TOP = 34.0f;
   constexpr float PORT_STEP = 24.0f;
   constexpr float DISABLED_OPACITY = 0.45f;
-
-  const ParameterDescriptor* findParameter(const ModuleDescriptor& descriptor, const std::string& key) {
-    const auto parameter = std::ranges::find_if(descriptor.parameters, [&key](const ParameterDescriptor& candidate) {
-      return candidate.key == key;
-    });
-
-    return parameter != descriptor.parameters.end() ? &*parameter : nullptr;
-  }
 
   /**
    * Откуда идёт дуга значения: у параметра с нулём внутри диапазона это ноль, так видно знак
@@ -132,14 +125,8 @@ void EditorScene::refresh(const Rml::Element* heldBlock) {
   }
 
   for (const ScreenView& view : this->screens) {
-    const ModuleInstance* module = model.findModule(view.module);
-    const ParameterDescriptor* phase = findParameter(*module->descriptor, "phase");
-    const float offset = phase ? toNormalized(*phase, module->parameters.at("phase")) : 0.0f;
-
-    view.screen->setShape((WAVE_TYPE)std::lround(module->parameters.at("wave")), offset);
+    this->refreshScreen(view);
   }
-
-  const auto layout = computeLayout(model, this->graph);
 
   for (const auto& [id, block] : this->blocks) {
     if (block == heldBlock) {
@@ -148,7 +135,7 @@ void EditorScene::refresh(const Rml::Element* heldBlock) {
 
     const ModuleInstance* module = model.findModule(id);
 
-    this->setBlockPosition(block, module->position.value_or(layout.at(id)));
+    this->setBlockPosition(block, module->position.value_or(this->layout.at(id)));
   }
 
   if (this->presetButton->GetInnerRML().empty() || presetName != this->seenPresetName) {
@@ -169,12 +156,8 @@ void EditorScene::refreshKnob(KnobView& view) {
       continue;
     }
 
-    const ModuleInstance* source = model.findModule(route.source.module);
-    const auto& outputs = source->descriptor->modOutputs;
-    const auto output = std::ranges::find_if(outputs, [&route](const ModOutputDescriptor& candidate) {
-      return candidate.key == route.source.output;
-    });
-    const bool isBipolar = output != outputs.end() && output->polarity == MOD_POLARITY::BIPOLAR;
+    const ModOutputDescriptor* output = findByKey(model.findModule(route.source.module)->descriptor->modOutputs, route.source.output);
+    const bool isBipolar = output && output->polarity == MOD_POLARITY::BIPOLAR;
 
     if (isBipolar) {
       low -= std::fabs(route.depth);
@@ -194,6 +177,15 @@ void EditorScene::refreshKnob(KnobView& view) {
     view.valueText->SetInnerRML(Rml::StringUtilities::EncodeRml(text));
     view.shownText = std::move(text);
   }
+}
+
+/**
+ * Экран рисует сдвиг фазы в долях периода, поэтому значение переводится в 0..1 по диапазону параметра
+ */
+void EditorScene::refreshScreen(const ScreenView& view) {
+  const ParameterValues& values = this->backend.getModel().findModule(view.module)->parameters;
+
+  view.screen->setShape((WAVE_TYPE)std::lround(values.at(view.wave->key)), toNormalized(*view.phase, values.at(view.phase->key)));
 }
 
 void EditorScene::refreshRoute(RouteView& view) {
@@ -253,11 +245,12 @@ void EditorScene::buildBlocks() {
   clearChildren(this->world);
 
   const SynthModel& model = this->backend.getModel();
-  const auto layout = computeLayout(model, this->graph);
+
+  this->layout = computeLayout(model, this->graph);
 
   for (const auto& [id, module] : model.getModules()) {
     if (isOnGraph(module, this->graph)) {
-      this->buildBlock(module, module.position.value_or(layout.at(id)));
+      this->buildBlock(module, module.position.value_or(this->layout.at(id)));
     }
   }
 }
@@ -309,7 +302,7 @@ void EditorScene::buildBlock(const ModuleInstance& module, ModulePosition positi
 
   if (module.isStub()) {
     addElement(block, "div", "block-note", "Unknown module");
-  } else if (descriptor.type == OSCILLATOR_TYPE) {
+  } else if (descriptor.type == OSCILLATOR_DESCRIPTOR.type) {
     this->buildOscillatorFace(body, module);
   } else {
     for (const ParameterDescriptor& parameter : descriptor.parameters) {
@@ -350,13 +343,17 @@ void EditorScene::buildKnob(Rml::Element* parent, const ModuleInstance& module, 
  * Поле вместо ручки (D-108): само поле и ячейка, и то, что тянут мышью. Подпись и число не ловят мышь,
  * поэтому двойной щелчок, колесо и провод модуляции попадают в поле, где бы ни был указатель
  */
-Rml::Element* EditorScene::buildField(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter, const std::string& label, const std::string& className) {
+void EditorScene::buildField(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter, const std::string& icon, const std::string& label, const std::string& className) {
   auto* field = dynamic_cast<ValueField*>(addElement(parent, "value-field", className));
 
   field->SetAttribute("data-module", (int)module.id);
   field->SetAttribute("data-parameter", parameter.key);
   field->SetAttribute("data-drag", "knob");
   field->setOrigin(findOrigin(parameter));
+
+  if (!icon.empty()) {
+    addElement(field, "div", "field-icon", icon);
+  }
 
   if (!label.empty()) {
     addElement(field, "div", "field-name", label);
@@ -366,8 +363,6 @@ Rml::Element* EditorScene::buildField(Rml::Element* parent, const ModuleInstance
 
   this->addParameterMarks(field, module, parameter);
   this->knobs.push_back({ field, field, value, module.id, &parameter, "", true });
-
-  return field;
 }
 
 void EditorScene::addParameterMarks(Rml::Element* cell, const ModuleInstance& module, const ParameterDescriptor& parameter) {
@@ -401,20 +396,15 @@ void EditorScene::addStepButton(Rml::Element* parent, ModuleId module, const std
 void EditorScene::buildOscillatorFace(Rml::Element* body, const ModuleInstance& module) {
   std::set<std::string> placed;
 
-  const auto addField = [&](Rml::Element* parent, const std::string& key, const std::string& label, const std::string& className) -> Rml::Element* {
-    const ParameterDescriptor* parameter = findParameter(*module.descriptor, key);
-
-    if (!parameter) {
-      return nullptr;
+  const auto addField = [&](Rml::Element* parent, const std::string& key, const std::string& icon, const std::string& label, const std::string& className) {
+    if (const ParameterDescriptor* parameter = findByKey(module.descriptor->parameters, key)) {
+      this->buildField(parent, module, *parameter, icon, label, className);
+      placed.insert(key);
     }
-
-    placed.insert(key);
-
-    return this->buildField(parent, module, *parameter, label, className);
   };
 
   const auto addKnob = [&](Rml::Element* parent, const std::string& key) {
-    if (const ParameterDescriptor* parameter = findParameter(*module.descriptor, key)) {
+    if (const ParameterDescriptor* parameter = findByKey(module.descriptor->parameters, key)) {
       this->buildKnob(parent, module, *parameter);
       placed.insert(key);
     }
@@ -425,30 +415,29 @@ void EditorScene::buildOscillatorFace(Rml::Element* body, const ModuleInstance& 
   Rml::Element* select = addElement(body, "div", "wave-select");
 
   this->addStepButton(select, module.id, "wave", -1, "‹");
-  addField(select, "wave", "", "field wave-name");
+  addField(select, "wave", "", "", "field wave-name");
   this->addStepButton(select, module.id, "wave", 1, "›");
 
   Rml::Element* screen = addElement(body, "div", "osc-screen");
-  Rml::Element* pitch = addElement(screen, "div", "field-row");
+  Rml::Element* pitch = addElement(screen, "div", "field-row pitch-row");
 
-  addField(pitch, "octave", "OCT", "field pitch-octave");
-  addField(pitch, "semi", "SEM", "field pitch-semi");
-  addField(pitch, "fine", "FIN", "field pitch-fine");
-  addField(pitch, "coarse", "CRS", "field pitch-coarse");
+  addField(pitch, "octave", "", "OCT", "field pitch-octave");
+  addField(pitch, "semi", "", "SEM", "field pitch-semi");
+  addField(pitch, "fine", "", "FIN", "field pitch-fine");
+  addField(pitch, "coarse", "", "CRS", "field pitch-coarse");
 
-  this->screens.push_back({ dynamic_cast<WaveScreen*>(addElement(screen, "wave-screen", "wave-screen")), module.id });
+  const ParameterDescriptor* wave = findByKey(module.descriptor->parameters, "wave");
+  const ParameterDescriptor* phaseShift = findByKey(module.descriptor->parameters, "phase");
 
-  Rml::Element* phase = addElement(screen, "div", "field-row");
+  if (wave && phaseShift) {
+    this->screens.push_back({ dynamic_cast<WaveScreen*>(addElement(screen, "wave-screen", "wave-screen")), module.id, wave, phaseShift });
+  }
 
   // Знак фазы крупнее подписи, как на референсе
-  for (Rml::Element* field : { addField(phase, "phase", "", "field"), addField(phase, "rand", "RAND", "field") }) {
-    if (field) {
-      Rml::Element* icon = field->InsertBefore(field->GetOwnerDocument()->CreateElement("div"), field->GetFirstChild());
+  Rml::Element* phase = addElement(screen, "div", "field-row");
 
-      icon->SetAttribute("class", "field-icon");
-      icon->SetInnerRML("φ");
-    }
-  }
+  addField(phase, "phase", "φ", "", "field");
+  addField(phase, "rand", "φ", "RAND", "field");
 
   Rml::Element* knobs = addElement(body, "div", "knob-row");
 
@@ -589,11 +578,8 @@ void EditorScene::buildMacros() {
 std::string EditorScene::makeSourceLabel(const ModSource& source) const {
   const SynthModel& model = this->backend.getModel();
   const ModuleInstance& module = *model.findModule(source.module);
-  const auto& outputs = module.descriptor->modOutputs;
-  const auto output = std::ranges::find_if(outputs, [&source](const ModOutputDescriptor& candidate) {
-    return candidate.key == source.output;
-  });
-  const std::string outputName = output != outputs.end() ? output->name : source.output;
+  const ModOutputDescriptor* output = findByKey(module.descriptor->modOutputs, source.output);
+  const std::string outputName = output ? output->name : source.output;
 
   if (module.descriptor->role == MODULE_ROLE::MACROS) {
     return outputName;
@@ -616,13 +602,9 @@ std::string EditorScene::makeTargetLabel(const ModTarget& target) const {
   const SynthModel& model = this->backend.getModel();
   const ModuleInstance& module = *model.findModule(target.module);
 
-  for (const ParameterDescriptor& parameter : module.descriptor->parameters) {
-    if (parameter.key == target.parameter) {
-      return makeParameterName(model, module, parameter);
-    }
-  }
+  const ParameterDescriptor* parameter = findByKey(module.descriptor->parameters, target.parameter);
 
-  return target.parameter;
+  return parameter ? makeParameterName(model, module, *parameter) : target.parameter;
 }
 
 void EditorScene::buildMatrix() {

@@ -229,6 +229,7 @@ void OscillatorProcessor::rewind() {
 void OscillatorProcessor::reset() {
   for (UnisonVoice& voice : this->voices) {
     voice.oscillator.stopWave();
+    voice.isActive = false;
   }
 
   this->isStarting = true;
@@ -262,24 +263,6 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   const auto count = (uint32_t)chunk.parameters[PARAM_UNISON].end;
   const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_OCTAVE].end * SEMITONES_PER_OCTAVE + chunk.parameters[PARAM_SEMI].end;
 
-  // Нота начинается сразу со всеми подголосами. Числа берутся по порядку подголосов и при Rand 0:
-  // при одном подголоске последовательность та же, что до унисона
-  if (this->isStarting) {
-    for (uint32_t index = 0; index < MAX_UNISON; index++) {
-      UnisonVoice& voice = this->voices[index];
-
-      voice.isActive = false;
-      voice.gain = index < count ? 1.0f : 0.0f;
-      voice.spread = toSpread(index, count);
-
-      if (index < count) {
-        this->startVoice(voice, rand);
-      }
-    }
-
-    this->isStarting = false;
-  }
-
   // Значения на концах участка сетки. Состояние подголоса меняется только в конце участка,
   // поэтому все куски одного участка видят одни и те же концы, как бы хост ни резал блок
   const float segmentStep = this->fadeStep * (float)chunk.rampFrames;
@@ -292,8 +275,10 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
     UnisonVoice& voice = this->voices[index];
     const bool isWanted = index < count;
 
-    // Новый подголос встаёт сразу на своё место и плавно набирает громкость
+    // Новый подголос встаёт сразу на своё место и плавно набирает громкость. Нота начинается сразу со всеми
+    // подголосами. Числа берутся по порядку подголосов и при Rand 0: при одном подголоске последовательность та же, что до унисона
     if (isWanted && !voice.isActive) {
+      voice.gain = this->isStarting ? 1.0f : 0.0f;
       voice.spread = toSpread(index, count);
       this->startVoice(voice, rand);
     }
@@ -308,9 +293,20 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
     totalGain.end += gains[index].end;
   }
 
+  this->isStarting = false;
+
   // Сумма подголосов делится на √N: громкость унисона почти не зависит от их числа.
   // Первый подголос нужен всегда, поэтому сумма не меньше 1
   const ParameterRamp normalize = { inverseSqrt(totalGain.start), inverseSqrt(totalGain.end) };
+
+  // Общее для всех подголосов считается один раз на кусок, а не для каждого подголоска
+  std::array<float, MAX_CHUNK_FRAMES> volumes;
+  std::array<float, MAX_CHUNK_FRAMES> phaseOffsets;
+
+  for (uint32_t frame = 0; frame < chunk.frames; frame++) {
+    volumes[frame] = chunk.at(level, frame) * chunk.at(normalize, frame);
+    phaseOffsets[frame] = chunk.at(phase, frame) / FULL_CYCLE_DEGREES;
+  }
 
   std::fill_n(output.left.begin(), chunk.frames, 0.0f);
   std::fill_n(output.right.begin(), chunk.frames, 0.0f);
@@ -339,10 +335,20 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
     toPanGains(toPosition(pan.end, width.end, spread.end), leftGain.end, rightGain.end);
     voice.oscillator.setWave(wave);
 
+    // Без модуляции высоты частота на участке постоянна: шаг фазы считается один раз
+    const bool isSteadyFrequency = frequency.start == frequency.end;
+
+    if (isSteadyFrequency) {
+      voice.oscillator.setFreq(frequency.start);
+    }
+
     for (uint32_t frame = 0; frame < chunk.frames; frame++) {
-      voice.oscillator.setFreq(chunk.at(frequency, frame));
-      voice.oscillator.setVolume(chunk.at(level, frame) * chunk.at(normalize, frame) * chunk.at(gain, frame));
-      voice.oscillator.setPhaseOffset(chunk.at(phase, frame) / FULL_CYCLE_DEGREES);
+      if (!isSteadyFrequency) {
+        voice.oscillator.setFreq(chunk.at(frequency, frame));
+      }
+
+      voice.oscillator.setVolume(volumes[frame] * chunk.at(gain, frame));
+      voice.oscillator.setPhaseOffset(phaseOffsets[frame]);
       voice.oscillator.doSample();
 
       output.left[frame] += voice.oscillator.currentSample * chunk.at(leftGain, frame);

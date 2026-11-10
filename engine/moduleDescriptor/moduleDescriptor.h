@@ -1,10 +1,12 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <expected>
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "../parameterDescriptor/parameterDescriptor.h"
@@ -73,3 +75,15 @@ struct ModuleDescriptor {
  * Проверяет корректность описания. В случае ошибки возвращает её текст
  */
 std::expected<void, std::string> validateModule(const ModuleDescriptor& module);
+
+/**
+ * Порт, выход модуляции или параметр описания по постоянному ключу. Пусто, если такого нет
+ */
+template <typename T>
+const T* findByKey(const std::vector<T>& items, std::string_view key) {
+  const auto item = std::ranges::find_if(items, [key](const T& candidate) {
+    return candidate.key == key;
+  });
+
+  return item != items.end() ? &*item : nullptr;
+}

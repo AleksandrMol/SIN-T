@@ -93,25 +93,23 @@ const char* const EDITOR_DOCUMENT = R"RML(
     background-color: #0e1116; drag: drag;
     box-shadow: #000000 0dp 0dp 0dp 1dp;
   }
+  /* Слои поверх всего холста или окна: мышь проходит сквозь них */
+  #grid, #canvas-shade, #wires, #draft { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
   /*
     Сетка едет вместе со схемой, как background-position: слой больше холста на период рисунка
     (отступ справа и снизу — GRID_PERIOD_DP из gridDecorator.h), редактор сдвигает его на остаток от прокрутки.
     Тень, виньетка и косынки лежат над сеткой: экран утоплен в раму, а линии уходят под её край
   */
-  #grid {
-    position: absolute; left: 0; top: 0; width: 100%; height: 100%; padding: 0 72dp 72dp 0;
-    pointer-events: none; decorator: grid();
-  }
+  #grid { padding: 0 72dp 72dp 0; decorator: grid(); }
   #canvas-shade {
-    position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;
     decorator:
       plate(bare 0dp gussets),
       radial-gradient(circle farthest-corner at 50% 40%, #28405c1c 0%, #00000000 55%, #00000070 100%);
     box-shadow: #000000e0 0dp 3dp 8dp inset;
   }
   #world { position: absolute; left: 0; top: 0; width: 1dp; height: 1dp; }
-  #wires { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
-  #draft { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; }
+  #wires { z-index: 5; }
+  #draft { z-index: 20; }
 
   .block {
     position: absolute; width: 252dp; box-sizing: border-box;
@@ -199,8 +197,8 @@ R"RML(
   .field.wave-name:hover { decorator: linear-gradient(180deg, #ffffff10 0%, #ffffff10 100%), plate(display 3dp none); }
   .field.wave-name.legal { decorator: linear-gradient(180deg, #f0923a38 0%, #f0923a38 100%), plate(display 3dp none); }
   /* Четыре поля высоты тона в ряд: отступы меньше, ширины по самому длинному значению «-4», «-48», «-99.9», «-47.99» */
-  .pitch-octave, .pitch-semi, .pitch-fine, .pitch-coarse { padding: 0 4dp; }
-  .pitch-octave .field-name, .pitch-semi .field-name, .pitch-fine .field-name, .pitch-coarse .field-name { margin-right: 3dp; }
+  .pitch-row .field { padding: 0 4dp; }
+  .pitch-row .field-name { margin-right: 3dp; }
   .pitch-octave { flex-grow: 43; }
   .pitch-semi { flex-grow: 53; }
   .pitch-fine { flex-grow: 60; }
@@ -226,26 +224,28 @@ R"RML(
     box-shadow: #000000 0dp 0dp 0dp 1dp, #00000090 0dp 2dp 3dp 1dp;
     drag: drag-drop; cursor: pointer; z-index: 6;
   }
+  /* Оправа гнезда одна на все состояния, меняется только сердечник */
+  @decorator port-bezel : linear-gradient { decorator: 135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%; }
   .port.audio {
     decorator:
       radial-gradient(circle farthest-corner at 35% 30%, #a8cffa 0%, #4f9cf2 45%, #1d5aa6 100%) padding-box,
-      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+      port-bezel border-box;
   }
   .port.modulation {
     border-radius: 3dp;
     decorator:
       radial-gradient(circle farthest-corner at 35% 30%, #ffd2a0 0%, #f39a45 45%, #a85a17 100%) padding-box,
-      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+      port-bezel border-box;
   }
   .port:hover {
     decorator:
       radial-gradient(circle farthest-corner at 35% 30%, #ffffff 0%, #e8eef6 50%, #a9b4c2 100%) padding-box,
-      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+      port-bezel border-box;
   }
   .port.legal {
     decorator:
       radial-gradient(circle farthest-corner at 35% 30%, #eaffde 0%, #8ee07a 40%, #3f9233 100%) padding-box,
-      linear-gradient(135deg, #d0d9e4 0%, #7d8795 40%, #2a2f36 100%) border-box;
+      port-bezel border-box;
   }
   .port.input { left: -8dp; }
   .port.output { right: -8dp; }

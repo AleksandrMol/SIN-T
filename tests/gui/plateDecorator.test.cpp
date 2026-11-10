@@ -190,11 +190,7 @@ TEST_CASE_FIXTURE(EditorFixture, "Пластины в стилях редакт�
   for (const char* selector : { "#logo-plate", "#macros", "#macros-well", "#matrix-rows", "#screen", "[data-action=\"save\"]" }) {
     CAPTURE(selector);
 
-    const Rml::Property* property = this->get(selector)->GetProperty("decorator");
-
-    REQUIRE(property != nullptr);
-
-    const Rml::DecoratorsPtr decorators = property->Get<Rml::DecoratorsPtr>();
+    const Rml::DecoratorsPtr decorators = this->decorators(this->get(selector));
 
     REQUIRE(decorators);
     REQUIRE_FALSE(decorators->list.empty());

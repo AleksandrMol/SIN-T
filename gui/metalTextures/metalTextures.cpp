@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdint>
 #include <numbers>
+#include <utility>
+#include <vector>
 
 namespace {
   constexpr int SIZE = 512;
@@ -116,6 +118,15 @@ namespace {
       }
 
       /**
+       * Добавить другой слой точка в точку
+       */
+      void add(const Field& layer) {
+        for (size_t index = 0; index < this->values.size(); index++) {
+          this->values[index] += layer.values[index];
+        }
+      }
+
+      /**
        * Шлифовка: у каждой строки свой ровный сдвиг яркости, вдоль неё тянутся длинные полосы
        */
       void addBrushing(float strength) {
@@ -221,54 +232,44 @@ namespace {
       std::vector<float> values;
   };
 
-  TextureImage makeBrushed() {
-    Field field;
+  struct MetalTextures {
+    TextureImage brushed;
+    TextureImage worn;
+    TextureImage scuffed;
+  };
 
-    field.addBrushing(BRUSHING_STRENGTH);
+  /**
+   * Все три текстуры сразу: шлифовка у brushed и worn общая, пятна у worn и scuffed тоже,
+   * поэтому каждый слой считается один раз. Редактор подключает все три, отдельно их не просят
+   */
+  MetalTextures makeTextures() {
+    Field brushing;
+    Field blotches;
 
-    return field.toImage();
-  }
+    brushing.addBrushing(BRUSHING_STRENGTH);
+    blotches.addBlotches(BLOTCH_STRENGTH);
 
-  TextureImage makeWorn() {
-    Field field;
+    Field worn = brushing;
 
-    field.addBrushing(BRUSHING_STRENGTH);
-    field.addBlotches(BLOTCH_STRENGTH);
-    field.addScratches(SCRATCH_COUNT, SCRATCH_STRENGTH);
-    field.addPits(PIT_COUNT, PIT_STRENGTH);
+    worn.add(blotches);
+    worn.addScratches(SCRATCH_COUNT, SCRATCH_STRENGTH);
+    worn.addPits(PIT_COUNT, PIT_STRENGTH);
 
-    return field.toImage();
-  }
+    Field scuffed = std::move(blotches);
 
-  TextureImage makeScuffed() {
-    Field field;
+    scuffed.addScratches(SCRATCH_COUNT / 2, SCRATCH_STRENGTH * 0.6f);
+    scuffed.addPits(PIT_COUNT / 2, PIT_STRENGTH);
 
-    field.addBlotches(BLOTCH_STRENGTH);
-    field.addScratches(SCRATCH_COUNT / 2, SCRATCH_STRENGTH * 0.6f);
-    field.addPits(PIT_COUNT / 2, PIT_STRENGTH);
-
-    return field.toImage();
+    return { brushing.toImage(), worn.toImage(), scuffed.toImage() };
   }
 }
 
 const TextureImage* findMetalTexture(std::string_view source) {
-  if (source == "sint:brushed") {
-    static const TextureImage brushed = makeBrushed();
-
-    return &brushed;
+  if (source != "sint:brushed" && source != "sint:worn" && source != "sint:scuffed") {
+    return nullptr;
   }
 
-  if (source == "sint:worn") {
-    static const TextureImage worn = makeWorn();
+  static const MetalTextures textures = makeTextures();
 
-    return &worn;
-  }
-
-  if (source == "sint:scuffed") {
-    static const TextureImage scuffed = makeScuffed();
-
-    return &scuffed;
-  }
-
-  return nullptr;
+  return source == "sint:brushed" ? &textures.brushed : source == "sint:worn" ? &textures.worn : &textures.scuffed;
 }
