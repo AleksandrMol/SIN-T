@@ -104,64 +104,24 @@ namespace {
   }
 }
 
-void Knob::change(float& field, float next) {
-  if (field != next) {
-    field = next;
-    this->isDirty = true;
-  }
-}
-
-void Knob::setValue(float value) {
-  this->change(this->value, value);
-}
-
-void Knob::setOrigin(float origin) {
-  this->change(this->origin, origin);
-}
-
-void Knob::setModulation(float low, float high) {
-  this->change(this->modulationLow, low);
-  this->change(this->modulationHigh, high);
-}
-
-float Knob::getValue() const {
-  return this->value;
-}
-
-float Knob::getOrigin() const {
-  return this->origin;
-}
-
-float Knob::getModulationLow() const {
-  return this->modulationLow;
-}
-
-float Knob::getModulationHigh() const {
-  return this->modulationHigh;
-}
-
-void Knob::OnResize() {
-  this->isDirty = true;
-}
-
 /**
  * Слои снизу вверх: тень, дорожка с дугами значения и модуляции, юбка с рифлением,
  * шлифованный торец с фаской, риска. Блики стоят на месте, вращаются только риска и рифление:
  * у настоящей ручки свет в комнате тоже не поворачивается вместе с ней
  */
-void Knob::rebuild() {
-  const Rml::Vector2f size = this->GetBox().GetSize(Rml::BoxArea::Content);
-  const float scale = this->GetContext() ? this->GetContext()->GetDensityIndependentPixelRatio() : 1.0f;
+void Knob::build(MeshBuilder& builder, Rml::Vector2f size, float scale) {
   const Rml::Vector2f center = size * 0.5f;
   const float radius = std::min(size.x, size.y) * 0.5f - 4.5f * scale;
   const float skirtRadius = std::max(radius - 3.0f * scale, 1.0f);
   const float capRadius = std::max(skirtRadius - 2.5f * scale, 1.0f);
-  const float angle = toAngle(this->value);
+  const float value = this->getValue();
+  const float origin = this->getOrigin();
+  const float modulationLow = this->getModulationLow();
+  const float modulationHigh = this->getModulationHigh();
+  const float angle = toAngle(value);
   const Rml::Vector2f direction(std::cos(angle), std::sin(angle));
 
   const Palette& palette = getPalette();
-
-  MeshBuilder builder(this->GetComputedValues().opacity());
 
   builder.addRing(
     { .center = center + Rml::Vector2f(0.0f, 1.5f * scale), .outerRadius = skirtRadius, .feather = 3.0f * scale, .steps = RING_STEPS / 2 },
@@ -172,10 +132,10 @@ void Knob::rebuild() {
   // Дорожка — прорезь в металле: светлая кромка снизу видна и там, где прорезь сливается с тенью ручки
   builder.addArc(center + Rml::Vector2f(0.0f, 0.8f * scale), radius, toAngle(0.0f), toAngle(1.0f), 2.5f * scale, TRACK_EDGE_COLOR);
   builder.addArc(center, radius, toAngle(0.0f), toAngle(1.0f), 2.5f * scale, TRACK_COLOR);
-  builder.addArc(center, radius, toAngle(this->origin), angle, 2.5f * scale, VALUE_COLOR);
+  builder.addArc(center, radius, toAngle(origin), angle, 2.5f * scale, VALUE_COLOR);
 
-  if (this->modulationHigh > this->modulationLow) {
-    builder.addArc(center, radius + 3.5f * scale, toAngle(this->modulationLow), toAngle(this->modulationHigh), 2.0f * scale, MODULATION_COLOR);
+  if (modulationHigh > modulationLow) {
+    builder.addArc(center, radius + 3.5f * scale, toAngle(modulationLow), toAngle(modulationHigh), 2.0f * scale, MODULATION_COLOR);
   }
 
   builder.addRing(
@@ -213,19 +173,4 @@ void Knob::rebuild() {
 
   builder.addLine(pointerShadow, 2.5f * scale, POINTER_SHADOW_COLOR);
   builder.addLine(pointer, 1.8f * scale, POINTER_COLOR);
-
-  this->geometry = this->GetRenderManager()->MakeGeometry(builder.takeMesh());
-  this->isDirty = false;
-}
-
-void Knob::OnRender() {
-  if (!this->GetRenderManager()) {
-    return;
-  }
-
-  if (this->isDirty) {
-    this->rebuild();
-  }
-
-  this->geometry.Render(this->GetAbsoluteOffset(Rml::BoxArea::Content));
 }

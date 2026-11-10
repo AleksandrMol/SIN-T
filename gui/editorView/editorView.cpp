@@ -311,6 +311,8 @@ void EditorView::runAction(const std::string& action, Rml::Element* element) {
     }
   } else if (action == "remove") {
     this->report(this->backend.apply(RemoveModule{ module }));
+  } else if (action == "step-parameter") {
+    this->stepParameter(module, readText(element, "data-key"), element->GetAttribute<int>("data-step", 0));
   } else if (action == "open") {
     this->openGraph(module);
   } else if (action == "close-graph") {
@@ -674,6 +676,27 @@ void EditorView::promptKnobValue(const KnobView& view) {
     this->report(this->backend.apply(SetParameter{ module, parameter->key, *value }));
     this->backend.endGesture(module, parameter->key);
   });
+}
+
+/**
+ * Стрелка переключателя (D-108): соседняя ступень, после последней снова первая
+ */
+void EditorView::stepParameter(ModuleId module, const std::string& parameter, int step) {
+  const KnobView* view = this->scene.findKnob(ModTarget{ module, parameter });
+
+  if (!view) {
+    return;
+  }
+
+  const ParameterDescriptor& descriptor = *view->parameter;
+  const float real = this->backend.getModel().findModule(module)->parameters.at(parameter);
+  const int count = (int)std::lround(descriptor.maxValue - descriptor.minValue) + 1;
+  const int index = (int)std::lround(real - descriptor.minValue);
+  const int next = ((index + step) % count + count) % count;
+
+  this->backend.beginGesture(module, parameter);
+  this->report(this->backend.apply(SetParameter{ module, parameter, descriptor.minValue + (float)next }));
+  this->backend.endGesture(module, parameter);
 }
 
 void EditorView::setDepthFromMouse(float mouseX) {

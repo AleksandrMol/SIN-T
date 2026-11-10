@@ -7,6 +7,8 @@
 #include "../gridDecorator/gridDecorator.h"
 #include "../knob/knob.h"
 #include "../plateDecorator/plateDecorator.h"
+#include "../valueField/valueField.h"
+#include "../waveScreen/waveScreen.h"
 #include "../wireLayer/wireLayer.h"
 
 extern const unsigned char embeddedFont[];
@@ -16,6 +18,8 @@ namespace {
   struct RmlRuntime {
     int users = 0;
     Rml::ElementInstancerGeneric<Knob> knobInstancer;
+    Rml::ElementInstancerGeneric<ValueField> fieldInstancer;
+    Rml::ElementInstancerGeneric<WaveScreen> waveScreenInstancer;
     Rml::ElementInstancerGeneric<WireLayer> wireInstancer;
     // Разборщики свойств появляются только в Rml::Initialise, поэтому декоратор создаётся после неё
     std::unique_ptr<PlateDecoratorInstancer> plateInstancer;
@@ -37,6 +41,8 @@ void acquireRmlRuntime() {
 
   Rml::Initialise();
   Rml::Factory::RegisterElementInstancer("knob", &runtime.knobInstancer);
+  Rml::Factory::RegisterElementInstancer("value-field", &runtime.fieldInstancer);
+  Rml::Factory::RegisterElementInstancer("wave-screen", &runtime.waveScreenInstancer);
   Rml::Factory::RegisterElementInstancer("wire-layer", &runtime.wireInstancer);
   runtime.plateInstancer = std::make_unique<PlateDecoratorInstancer>();
   Rml::Factory::RegisterDecoratorInstancer("plate", runtime.plateInstancer.get());

@@ -177,12 +177,30 @@ struct EditorFixture {
     return this->get(".block[data-module=\"" + std::to_string(module) + "\"]");
   }
 
+  /**
+   * Ячейка параметра: у ручки это обёртка с подписью, у поля само поле (D-108)
+   */
   Rml::Element* cell(ModuleId module, const std::string& parameter) const {
-    return this->get(".knob-cell[data-module=\"" + std::to_string(module) + "\"][data-parameter=\"" + parameter + "\"]");
+    return this->get("[data-module=\"" + std::to_string(module) + "\"][data-parameter=\"" + parameter + "\"]");
   }
 
+  /**
+   * То, что тянут мышью: ручка или поле
+   */
   Rml::Element* knob(ModuleId module, const std::string& parameter) const {
-    return this->cell(module, parameter)->QuerySelector("knob");
+    Rml::Element* cell = this->cell(module, parameter);
+
+    return cell->HasAttribute("data-drag") ? cell : cell->QuerySelector("knob");
+  }
+
+  /**
+   * Текст значения у ручки или поля
+   */
+  std::string shownValue(ModuleId module, const std::string& parameter) const {
+    Rml::Element* cell = this->cell(module, parameter);
+    Rml::Element* value = cell->QuerySelector(".knob-value");
+
+    return this->text(value ? value : cell->QuerySelector(".field-value"));
   }
 
   Rml::Element* port(ModuleId module, const std::string& port, const std::string& kind) const {

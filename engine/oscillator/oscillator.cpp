@@ -3,6 +3,21 @@
 #include <cmath>
 #include <numbers>
 
+float shapeWave(WAVE_TYPE type, float phase) {
+  switch (type) {
+    case WAVE_TYPE::SIN:
+      return std::sin(2.0f * std::numbers::pi_v<float> * phase);
+    case WAVE_TYPE::SQR:
+      return phase < 0.5f ? 1.0f : -1.0f;
+    case WAVE_TYPE::SAW:
+      return 2.0f * phase - 1.0f;
+    case WAVE_TYPE::TNG:
+      return phase < 0.5f ? 4.0f * phase - 1.0f : 3.0f - 4.0f * phase;
+  }
+
+  return 0.0f;
+}
+
 Oscillator::Oscillator() {
   this->sampleRate = 44100.0f;
   this->freq = 440.0f;

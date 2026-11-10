@@ -10,6 +10,32 @@ namespace {
     return std::trunc(value) == value;
   }
 
+  // Половина последнего показанного знака: меньшее по модулю число показывается нулём, а не «-0.0»
+  constexpr float HALF_LAST_DIGIT[MAX_DECIMALS + 1] = { 0.5f, 0.05f, 0.005f, 0.0005f, 0.00005f, 0.000005f, 0.0000005f };
+
+  bool isGluedUnit(const std::string& unit) {
+    return unit == "°" || unit == "%";
+  }
+
+  /**
+   * Число без единиц: подпись ступени или число с нужным числом знаков
+   */
+  std::string formatNumber(const ParameterDescriptor& parameter, float real) {
+    if (!parameter.choices.empty()) {
+      return parameter.choices[(size_t)(limitReal(parameter, real) - parameter.minValue)];
+    }
+
+    const float magnitude = std::fabs(real);
+    const int autoDecimals = parameter.isStepped || magnitude >= 1000.0f ? 0 : magnitude >= 100.0f ? 1 : magnitude >= 10.0f ? 2 : 3;
+    const int decimals = parameter.decimals == AUTO_DECIMALS ? autoDecimals : parameter.decimals;
+    const float shown = magnitude < HALF_LAST_DIGIT[decimals] ? 0.0f : real;
+
+    char text[64];
+    const auto written = std::to_chars(text, text + sizeof(text), shown, std::chars_format::fixed, decimals);
+
+    return std::string(text, written.ptr);
+  }
+
   bool isSameText(std::string_view first, std::string_view second) {
     return std::ranges::equal(first, second, [](unsigned char left, unsigned char right) {
       return std::tolower(left) == std::tolower(right);
@@ -42,6 +68,10 @@ std::expected<void, std::string> validateParameter(const ParameterDescriptor& pa
 
   if (parameter.isStepped && !(isInteger(parameter.minValue) && isInteger(parameter.maxValue) && isInteger(parameter.defaultValue))) {
     return std::unexpected(label + "значения ступенчатого параметра должны быть целыми");
+  }
+
+  if (parameter.decimals < AUTO_DECIMALS || parameter.decimals > MAX_DECIMALS) {
+    return std::unexpected(label + "неверное число знаков после точки");
   }
 
   if (!parameter.choices.empty()) {
@@ -85,22 +115,19 @@ float limitReal(const ParameterDescriptor& parameter, float real) {
 }
 
 std::string formatParameter(const ParameterDescriptor& parameter, float real) {
-  if (!parameter.choices.empty()) {
-    return parameter.choices[(size_t)(limitReal(parameter, real) - parameter.minValue)];
+  std::string result = formatNumber(parameter, real);
+
+  if (!parameter.choices.empty() || parameter.unit.empty()) {
+    return result;
   }
 
-  const float magnitude = std::fabs(real);
-  const int decimals = parameter.isStepped || magnitude >= 1000.0f ? 0 : magnitude >= 100.0f ? 1 : magnitude >= 10.0f ? 2 : 3;
+  return result + (isGluedUnit(parameter.unit) ? "" : " ") + parameter.unit;
+}
 
-  char text[64];
-  const auto written = std::to_chars(text, text + sizeof(text), real, std::chars_format::fixed, decimals);
-  std::string result(text, written.ptr);
+std::string formatParameterShort(const ParameterDescriptor& parameter, float real) {
+  std::string result = formatNumber(parameter, real);
 
-  if (!parameter.unit.empty()) {
-    result += " " + parameter.unit;
-  }
-
-  return result;
+  return parameter.choices.empty() && isGluedUnit(parameter.unit) ? result + parameter.unit : result;
 }
 
 std::optional<float> parseParameter(const ParameterDescriptor& parameter, std::string_view text) {

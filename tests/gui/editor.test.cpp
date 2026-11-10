@@ -17,6 +17,7 @@
 #include "../../engine/preset/preset.h"
 #include "../../gui/editorDocument/editorDocument.h"
 #include "../../gui/editorView/editorView.h"
+#include "../../gui/graphLayout/graphLayout.h"
 #include "../../gui/knob/knob.h"
 #include "../../gui/rmlRuntime/rmlRuntime.h"
 #include "../../plugin/plugin.h"
@@ -59,8 +60,8 @@ TEST_CASE_FIXTURE(EditorFixture, "Ручки строятся по описан�
   const size_t parameterCount = this->model().findModule(oscillator)->descriptor->parameters.size();
 
   CHECK(parameterCount > 1);
-  CHECK(this->count(".knob-cell[data-module=\"" + std::to_string(oscillator) + "\"]") == (int)parameterCount);
-  CHECK(this->text(this->cell(oscillator, "wave")->QuerySelector(".knob-value")) == "Saw");
+  CHECK(this->count("[data-parameter][data-module=\"" + std::to_string(oscillator) + "\"]") == (int)parameterCount);
+  CHECK(this->shownValue(oscillator, "wave") == "Saw");
   CHECK(this->text(this->cell(this->findModule("filter"), "cutoff")->QuerySelector(".knob-value")) == "1000 Hz");
   CHECK(this->text(this->cell(this->findModule("amp"), "velocity")->QuerySelector(".knob-name")) == "Vel sens");
   CHECK(this->count("#macro-cells .knob-cell") == 8);
@@ -221,7 +222,7 @@ TEST_CASE_FIXTURE(EditorFixture, "Ступенчатая ручка не тер�
   this->release();
 
   CHECK(this->value(oscillator, "wave") == 4.0f);
-  CHECK(this->text(this->cell(oscillator, "wave")->QuerySelector(".knob-value")) == "Triangle");
+  CHECK(this->shownValue(oscillator, "wave") == "Triangle");
 }
 
 TEST_CASE_FIXTURE(EditorFixture, "Двойной клик возвращает значение, с которым параметр загружен (D-061)") {
@@ -983,4 +984,48 @@ TEST_CASE("Закрытие и открытие редактора не нака
 
   MESSAGE("Рост за 100 открытий: " << growth << " КБ");
   CHECK(growth < 500);
+}
+
+TEST_CASE_FIXTURE(EditorFixture, "Высота блока для авторасстановки совпадает с настоящей у каждого модуля (D-108)") {
+  const ModuleId generator = this->findModule("generator");
+
+  for (const ModuleDescriptor* descriptor : this->instance->registry.getAll()) {
+    if (descriptor->role == MODULE_ROLE::OUTPUT || descriptor->role == MODULE_ROLE::MACROS) {
+      continue;
+    }
+
+    // Модуль, который живёт в голосе, проверяется в подграфе, остальные в главном графе
+    const std::optional<ModuleId> owner = descriptor->isAllowedInPoly && descriptor->role != MODULE_ROLE::GENERATOR
+      ? std::optional<ModuleId>(generator)
+      : std::nullopt;
+
+    this->apply(AddModule{ descriptor->type, owner });
+  }
+
+  // ID заглушки не совпадает с ID открытого генератора: иначе вид остался бы внутри него (docs/BACKLOG.md)
+  const std::string stub = R"({
+    "version": 1, "nextModuleId": 10,
+    "modules": [ { "id": 1, "type": "output", "typeVersion": 1 }, { "id": 9, "type": "future.chorus", "typeVersion": 7 } ],
+    "connections": [], "routes": []
+  })";
+
+  const auto checkHeights = [this] {
+    const float scale = this->context->GetDensityIndependentPixelRatio();
+
+    for (const auto& [id, block] : this->view->getScene().getBlocks()) {
+      const ModuleInstance& module = *this->model().findModule(id);
+
+      CAPTURE(module.descriptor->type);
+      CHECK(block->GetBox().GetSize(Rml::BoxArea::Border).y / scale == doctest::Approx(getBlockHeight(module)).epsilon(0.001));
+    }
+  };
+
+  checkHeights();
+  this->openGenerator();
+  checkHeights();
+
+  REQUIRE(my_plug_load_preset(this->instance, stub, "Stub").has_value());
+  this->frame();
+  REQUIRE(this->view->getScene().getBlocks().size() == 2);
+  checkHeights();
 }

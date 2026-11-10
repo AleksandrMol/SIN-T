@@ -110,6 +110,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 0.0f,
       .unit = "ct",
       .isModulatable = true,
+      .decimals = 1,
     },
     {
       // До D-103 был ступенчатым и выполнял роль semi. Значения из старых файлов дают ту же высоту
@@ -120,6 +121,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 0.0f,
       .unit = "st",
       .isModulatable = true,
+      .decimals = 2,
     },
     {
       .key = "phase",
@@ -129,6 +131,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 0.0f,
       .unit = "°",
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       // По умолчанию каждая нота со случайной фазы: решение пользователя, звук старых пресетов изменился (D-105)
@@ -139,6 +142,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = PERCENT,
       .unit = "%",
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       .key = "unison",
@@ -158,6 +162,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 20.0f,
       .unit = "ct",
       .isModulatable = true,
+      .decimals = 1,
     },
     {
       .key = "width",
@@ -167,6 +172,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = PERCENT,
       .unit = "%",
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       .key = "pan",
@@ -175,6 +181,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .maxValue = PAN_RANGE,
       .defaultValue = 0.0f,
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       .key = "level",

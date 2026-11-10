@@ -6,6 +6,10 @@
 #include <string_view>
 #include <vector>
 
+// Число знаков после точки в тексте значения подбирается по величине числа
+inline constexpr int AUTO_DECIMALS = -1;
+inline constexpr int MAX_DECIMALS = 6;
+
 enum class PARAM_CURVE {
   LINEAR,
   LOG,
@@ -27,6 +31,7 @@ struct ParameterDescriptor {
   bool isStructural = false; // Значение приходит с планом: ему может понадобиться память (D-053)
   std::vector<std::string> choices{}; // Подписи ступеней, начиная с minValue. Только у ступенчатых (D-066)
   std::string shortName{}; // Подпись под ручкой, если имя в неё не помещается
+  int decimals = AUTO_DECIMALS; // Знаков после точки в тексте значения: точнее, чем нужно на слух, не показываем
 };
 
 /**
@@ -52,10 +57,16 @@ float toNormalized(const ParameterDescriptor& parameter, float real);
 float limitReal(const ParameterDescriptor& parameter, float real);
 
 /**
- * Значение в реальных единицах как текст для человека: «1200 Hz», «0.300 s», «Saw».
- * Не зависит от локали: хост мог поменять её во всём процессе
+ * Значение в реальных единицах как текст для человека: «1200 Hz», «0.300 s», «Saw», «180°».
+ * Градус и процент пишутся слитно. Не зависит от локали: хост мог поменять её во всём процессе
  */
 std::string formatParameter(const ParameterDescriptor& parameter, float real);
+
+/**
+ * Как formatParameter, но без единиц, которые пишутся через пробел: для тесного поля,
+ * где имя параметра уже говорит, что это за число (D-108). Слитные «°» и «%» остаются
+ */
+std::string formatParameterShort(const ParameterDescriptor& parameter, float real);
 
 /**
  * Обратно к formatParameter. Подпись ступени читается без учёта регистра, число тоже подходит.

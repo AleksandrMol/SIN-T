@@ -133,8 +133,11 @@ if(SINT_BUILD_GUI)
     gui/logoImage/logoImage.cpp
     gui/meshBuilder/meshBuilder.cpp
     gui/metalTextures/metalTextures.cpp
+    gui/parameterControl/parameterControl.cpp
     gui/plateDecorator/plateDecorator.cpp
     gui/rmlRuntime/rmlRuntime.cpp
+    gui/valueField/valueField.cpp
+    gui/waveScreen/waveScreen.cpp
     gui/wireGeometry/wireGeometry.cpp
     gui/wireLayer/wireLayer.cpp
     ${SINT_FONT_SOURCE}
@@ -263,9 +266,11 @@ if(SINT_BUILD_TESTS)
       tests/gui/gridDecorator.test.cpp
       tests/gui/logoImage.test.cpp
       tests/gui/meshBuilder.test.cpp
+      tests/gui/oscillatorFace.test.cpp
       tests/gui/metalTextures.test.cpp
       tests/gui/plateDecorator.test.cpp
       tests/gui/viewUpdate.test.cpp
+      tests/gui/waveScreen.test.cpp
     )
     target_link_libraries(sint_gui_tests PRIVATE sint_gui_view sint_plugin_objects sint_no_editor doctest::doctest)
     add_test(NAME sint_gui_tests COMMAND sint_gui_tests)

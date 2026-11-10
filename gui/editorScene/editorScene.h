@@ -11,18 +11,31 @@
 #include "../../engine/modelTypes/modelTypes.h"
 #include "../editorBackend/editorBackend.h"
 
-class Knob;
+class ParameterControl;
+class WaveScreen;
 class WireLayer;
 
 using WireRef = std::variant<Connection, RouteKey>;
 
+/**
+ * Элемент параметра: ручка или поле (D-108). У поля ячейка — оно само
+ */
 struct KnobView {
-  Knob* knob;
+  ParameterControl* knob;
   Rml::Element* cell;
   Rml::Element* valueText;
   ModuleId module;
   const ParameterDescriptor* parameter;
   std::string shownText;
+  bool isShort = false; // Поле: число без единиц через пробел, имя параметра стоит рядом
+};
+
+/**
+ * Мини-экран блока (D-094): рисует форму по параметрам своего модуля
+ */
+struct ScreenView {
+  WaveScreen* screen;
+  ModuleId module;
 };
 
 struct RouteView {
@@ -88,6 +101,7 @@ class EditorScene final {
     std::string seenPresetName;
 
     std::vector<KnobView> knobs;
+    std::vector<ScreenView> screens;
     std::vector<RouteView> routes;
     std::map<ModuleId, Rml::Element*> blocks;
     std::vector<Rml::Element*> ports;
@@ -101,6 +115,10 @@ class EditorScene final {
     void buildBlocks();
     void buildBlock(const ModuleInstance& module, ModulePosition position);
     void buildKnob(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter);
+    Rml::Element* buildField(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter, const std::string& label, const std::string& className);
+    void addParameterMarks(Rml::Element* cell, const ModuleInstance& module, const ParameterDescriptor& parameter);
+    void addStepButton(Rml::Element* parent, ModuleId module, const std::string& parameter, int step, const std::string& text);
+    void buildOscillatorFace(Rml::Element* body, const ModuleInstance& module);
     void buildPorts(Rml::Element* block, const ModuleInstance& module);
     Rml::Element* addPort(Rml::Element* parent, ModuleId module, const std::string& port, const std::string& className);
     void buildWires();
