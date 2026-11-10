@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "../../engine/oscillator/oscillatorProcessor.h"
+
 namespace {
   constexpr float MARGIN = 24.0f;
   constexpr float COLUMN_WIDTH = 290.0f;
@@ -64,7 +66,8 @@ float getBlockHeight(const ModuleInstance& module) {
     return FRAME_HEIGHT + BODY_PADDING + STUB_NOTE_HEIGHT;
   }
 
-  if (descriptor.type == OSCILLATOR_TYPE) {
+  // Своя лицевая сторона (D-108), её строит EditorScene::buildOscillatorFace
+  if (descriptor.type == OSCILLATOR_DESCRIPTOR.type) {
     return FRAME_HEIGHT + OSCILLATOR_BODY_HEIGHT;
   }
 

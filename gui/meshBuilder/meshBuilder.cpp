@@ -70,6 +70,12 @@ void MeshBuilder::addTriangle(Rml::Vector2f first, Rml::Vector2f second, Rml::Ve
   this->mesh.indices.insert(this->mesh.indices.end(), { a, b, c });
 }
 
+void MeshBuilder::addRectangle(Rml::Vector2f from, Rml::Vector2f to, Rml::Colourb color) {
+  const Rml::Vector2f points[4] = { from, Rml::Vector2f(to.x, from.y), to, Rml::Vector2f(from.x, to.y) };
+
+  this->addConvexPolygon(points, single(color));
+}
+
 void MeshBuilder::addArc(Rml::Vector2f center, float radius, float startAngle, float endAngle, float width, Rml::Colourb color) {
   const int steps = std::max((int)(std::fabs(endAngle - startAngle) / ARC_STEP), 2);
   std::vector<Rml::Vector2f> points;

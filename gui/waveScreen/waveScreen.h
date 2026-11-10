@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../../engine/oscillator/oscillator.h"
+#include "../meshElement/meshElement.h"
 
 using WaveLine = std::vector<Rml::Vector2f>;
 
@@ -19,9 +20,9 @@ std::vector<WaveLine> traceWave(WAVE_TYPE type, float phaseOffset, int steps);
  * Мини-экран осциллятора (D-094, D-108): форма волны по параметрам модуля, а не по звуку.
  * Сетка строится только при смене формы или размера, поэтому в простое кадров нет
  */
-class WaveScreen : public Rml::Element {
+class WaveScreen : public MeshElement {
   public:
-    using Rml::Element::Element;
+    using MeshElement::MeshElement;
 
     /**
      * phaseOffset — сдвиг фазы в долях периода 0..1
@@ -32,14 +33,9 @@ class WaveScreen : public Rml::Element {
     float getPhaseOffset() const;
 
   protected:
-    void OnRender() override;
-    void OnResize() override;
+    void build(MeshBuilder& builder, Rml::Vector2f size, float scale) override;
 
   private:
     WAVE_TYPE type = WAVE_TYPE::SAW;
     float phaseOffset = 0.0f;
-    bool isDirty = true;
-    Rml::Geometry geometry;
-
-    void rebuild();
 };

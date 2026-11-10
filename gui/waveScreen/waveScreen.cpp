@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 
+#include "../colorTools/colorTools.h"
 #include "../meshBuilder/meshBuilder.h"
 
 namespace {
@@ -18,11 +19,11 @@ namespace {
   // Отступ волны от верхнего и нижнего края экрана, dp
   constexpr float MARGIN = 6.0f;
 
-  const Rml::Colourb GRID_COLOR(61, 141, 232, 26);
-  const Rml::Colourb ZERO_COLOR(61, 141, 232, 56);
-  const Rml::Colourb FILL_COLOR(61, 141, 232, 64);
-  const Rml::Colourb FILL_EDGE_COLOR(61, 141, 232, 0);
-  const Rml::Colourb GLOW_COLOR(61, 141, 232, 70);
+  const Rml::Colourb GRID_COLOR = withAlpha(ACCENT_COLOR, 26);
+  const Rml::Colourb ZERO_COLOR = withAlpha(ACCENT_COLOR, 56);
+  const Rml::Colourb FILL_COLOR = withAlpha(ACCENT_COLOR, 64);
+  const Rml::Colourb FILL_EDGE_COLOR = withAlpha(ACCENT_COLOR, 0);
+  const Rml::Colourb GLOW_COLOR = withAlpha(ACCENT_COLOR, 70);
   const Rml::Colourb LINE_COLOR(159, 196, 245);
 
   float wrap(float value) {
@@ -147,7 +148,7 @@ void WaveScreen::setShape(WAVE_TYPE type, float phaseOffset) {
   if (type != this->type || phaseOffset != this->phaseOffset) {
     this->type = type;
     this->phaseOffset = phaseOffset;
-    this->isDirty = true;
+    this->markDirty();
   }
 }
 
@@ -159,20 +160,12 @@ float WaveScreen::getPhaseOffset() const {
   return this->phaseOffset;
 }
 
-void WaveScreen::OnResize() {
-  this->isDirty = true;
-}
-
 /**
  * Слои снизу вверх: сетка по четвертям периода и линия нуля, заливка до нуля, свечение, сама линия
  */
-void WaveScreen::rebuild() {
-  const Rml::Vector2f size = this->GetBox().GetSize(Rml::BoxArea::Border);
-  const float scale = this->GetContext() ? this->GetContext()->GetDensityIndependentPixelRatio() : 1.0f;
+void WaveScreen::build(MeshBuilder& builder, Rml::Vector2f size, float scale) {
   const Rml::Vector2f origin(0.0f, size.y * 0.5f);
   const Rml::Vector2f extent(size.x, std::max(size.y * 0.5f - MARGIN * scale, 1.0f));
-
-  MeshBuilder builder(this->GetComputedValues().opacity());
 
   for (int quarter = 1; quarter < 4; quarter++) {
     const float x = std::round(size.x * (float)quarter / 4.0f) + 0.5f;
@@ -206,19 +199,4 @@ void WaveScreen::rebuild() {
   for (const WaveLine& points : screenLines) {
     builder.addLine(points, 1.6f * scale, LINE_COLOR);
   }
-
-  this->geometry = this->GetRenderManager()->MakeGeometry(builder.takeMesh());
-  this->isDirty = false;
-}
-
-void WaveScreen::OnRender() {
-  if (!this->GetRenderManager()) {
-    return;
-  }
-
-  if (this->isDirty) {
-    this->rebuild();
-  }
-
-  this->geometry.Render(this->GetAbsoluteOffset(Rml::BoxArea::Border));
 }

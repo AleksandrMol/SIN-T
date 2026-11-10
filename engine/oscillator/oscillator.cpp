@@ -116,51 +116,25 @@ float Oscillator::polyBlep(float phase, float phaseStep) {
 };
 
 /**
- * Метод вычисления волны пилы
- */
-float Oscillator::calculateSaw(float phase) {
-  float nativeSaw = 2.0f * phase - 1.0f;
-
-  float output = nativeSaw - polyBlep(phase, this->phaseStep);
-
-  return output;
-}
-
-/**
- * Метод вычисления волны квадрата
- */
-float Oscillator::calculateSquare(float phase)
-{
-  float value = phase < 0.5f ? 1.0f : -1.0f;
-
-  value += polyBlep(phase, this->phaseStep);
-
-  float shiftedPhase = phase + 0.5f;
-
-  if (shiftedPhase >= 1.0f) {
-    shiftedPhase -= 1.0f;
-  }
-
-  value -= polyBlep(shiftedPhase, this->phaseStep);
-
-  return value;
-}
-
-/**
- * Метод для высчитывания волн
+ * Значение волны: форма из shapeWave, у пилы и меандра разрывы сглажены polyBLEP против алиаса
  */
 float Oscillator::calculateWave(float phase) {
-  switch (this->waveType) {
-    case WAVE_TYPE::SIN:
-      return std::sin(2.0f * std::numbers::pi_v<float> * phase) * this->volume;
-    case WAVE_TYPE::SQR:
-      return this->calculateSquare(phase) * this->volume;
-    case WAVE_TYPE::SAW:
-      return this->calculateSaw(phase) * this->volume;
-    case WAVE_TYPE::TNG:
-      return (phase < 0.5f ? (4.0f * phase - 1.0f) : (3.0f - 4.0f * phase)) * this->volume;
+  float value = shapeWave(this->waveType, phase);
+
+  if (this->waveType == WAVE_TYPE::SAW) {
+    value -= polyBlep(phase, this->phaseStep);
+  } else if (this->waveType == WAVE_TYPE::SQR) {
+    float shiftedPhase = phase + 0.5f;
+
+    if (shiftedPhase >= 1.0f) {
+      shiftedPhase -= 1.0f;
+    }
+
+    value += polyBlep(phase, this->phaseStep);
+    value -= polyBlep(shiftedPhase, this->phaseStep);
   }
-  return 0.0f; 
+
+  return value * this->volume;
 }
 
 /**

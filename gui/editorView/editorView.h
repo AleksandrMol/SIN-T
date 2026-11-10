@@ -138,6 +138,7 @@ class EditorView final : public Rml::EventListener {
     void removeSelectedWire();
 
     void setKnobValue(const KnobView& view, float position);
+    void setParameterOnce(ModuleId module, const std::string& parameter, float real);
     void changeKnob(const KnobView& view, float delta, bool isFine);
     void promptKnobValue(const KnobView& view);
     void stepParameter(ModuleId module, const std::string& parameter, int step);

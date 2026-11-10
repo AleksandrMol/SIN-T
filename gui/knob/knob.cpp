@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "../colorTools/colorTools.h"
 #include "../meshBuilder/meshBuilder.h"
 
 namespace {
@@ -18,8 +19,6 @@ namespace {
 
   const Rml::Colourb TRACK_COLOR(11, 13, 16);
   const Rml::Colourb TRACK_EDGE_COLOR(255, 255, 255, 20);
-  const Rml::Colourb VALUE_COLOR(61, 141, 232);
-  const Rml::Colourb MODULATION_COLOR(240, 146, 58);
   const Rml::Colourb SHADOW_COLOR(0, 0, 0, 160);
   const Rml::Colourb SKIRT_INNER_COLOR(14, 15, 18);
   const Rml::Colourb SKIRT_DARK_COLOR(10, 11, 13);
@@ -34,20 +33,6 @@ namespace {
 
   float toAngle(float position) {
     return START_ANGLE + std::clamp(position, 0.0f, 1.0f) * SWEEP;
-  }
-
-  Rml::Colourb mix(Rml::Colourb from, Rml::Colourb to, float amount) {
-    const auto channel = [amount](Rml::byte a, Rml::byte b) {
-      return (Rml::byte)std::lround((float)a + ((float)b - (float)a) * std::clamp(amount, 0.0f, 1.0f));
-    };
-
-    return Rml::Colourb(channel(from.red, to.red), channel(from.green, to.green), channel(from.blue, to.blue), channel(from.alpha, to.alpha));
-  }
-
-  Rml::Colourb transparent(Rml::Colourb color) {
-    color.alpha = 0;
-
-    return color;
   }
 
   /**
@@ -85,10 +70,10 @@ namespace {
         const float angle = MeshBuilder::getRingAngle(step, RING_STEPS);
         const float light = facing(angle);
 
-        this->skirt[step] = mix(SKIRT_DARK_COLOR, SKIRT_LIGHT_COLOR, light * light);
-        this->cap[step] = mix(CAP_DARK_COLOR, CAP_LIGHT_COLOR, brushed(angle));
-        this->bevel[step] = mix(BEVEL_DARK_COLOR, BEVEL_LIGHT_COLOR, light);
-        this->bevelInner[step] = transparent(this->bevel[step]);
+        this->skirt[step] = mixColor(SKIRT_DARK_COLOR, SKIRT_LIGHT_COLOR, light * light);
+        this->cap[step] = mixColor(CAP_DARK_COLOR, CAP_LIGHT_COLOR, brushed(angle));
+        this->bevel[step] = mixColor(BEVEL_DARK_COLOR, BEVEL_LIGHT_COLOR, light);
+        this->bevelInner[step] = withAlpha(this->bevel[step], 0);
       }
     }
   };
@@ -99,9 +84,6 @@ namespace {
     return palette;
   }
 
-  std::span<const Rml::Colourb> single(const Rml::Colourb& color) {
-    return { &color, 1 };
-  }
 }
 
 /**
@@ -132,7 +114,7 @@ void Knob::build(MeshBuilder& builder, Rml::Vector2f size, float scale) {
   // Дорожка — прорезь в металле: светлая кромка снизу видна и там, где прорезь сливается с тенью ручки
   builder.addArc(center + Rml::Vector2f(0.0f, 0.8f * scale), radius, toAngle(0.0f), toAngle(1.0f), 2.5f * scale, TRACK_EDGE_COLOR);
   builder.addArc(center, radius, toAngle(0.0f), toAngle(1.0f), 2.5f * scale, TRACK_COLOR);
-  builder.addArc(center, radius, toAngle(origin), angle, 2.5f * scale, VALUE_COLOR);
+  builder.addArc(center, radius, toAngle(origin), angle, 2.5f * scale, ACCENT_COLOR);
 
   if (modulationHigh > modulationLow) {
     builder.addArc(center, radius + 3.5f * scale, toAngle(modulationLow), toAngle(modulationHigh), 2.0f * scale, MODULATION_COLOR);

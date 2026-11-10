@@ -100,11 +100,7 @@ TEST_CASE_FIXTURE(EditorFixture, "Сетка холста закрывает в�
   Rml::Element* canvas = this->get("#canvas");
   Rml::Element* grid = this->get("#grid");
   Rml::Element* world = this->get("#world");
-  const Rml::Property* property = grid->GetProperty("decorator");
-
-  REQUIRE(property);
-
-  const Rml::DecoratorsPtr decorators = property->Get<Rml::DecoratorsPtr>();
+  const Rml::DecoratorsPtr decorators = this->decorators(grid);
 
   REQUIRE(decorators);
   REQUIRE(decorators->list.size() == 1);

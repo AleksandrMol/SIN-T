@@ -9,7 +9,7 @@ enum class WAVE_TYPE {
 
 /**
  * Форма волны без сглаживания разрывов: фаза 0..1, значение -1..1. В точке разрыва — значение после него.
- * По ней экран редактора рисует волну (D-094, D-108), тест сверяет её со звуком осциллятора
+ * Из неё же звучит осциллятор, по ней экран редактора рисует волну (D-094, D-108)
  */
 float shapeWave(WAVE_TYPE type, float phase);
 
@@ -43,7 +43,5 @@ class Oscillator {
 
     void setPhaseStep();
     float polyBlep(float phase, float phaseStep);
-    float calculateSaw(float phase);
-    float calculateSquare(float phase);
     float calculateWave(float phase);
 };

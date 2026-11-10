@@ -26,6 +26,11 @@ class MeshBuilder {
     void addTriangle(Rml::Vector2f first, Rml::Vector2f second, Rml::Vector2f third, Rml::Colourb color);
 
     /**
+     * Прямоугольник со сторонами вдоль осей, from и to — противоположные углы
+     */
+    void addRectangle(Rml::Vector2f from, Rml::Vector2f to, Rml::Colourb color);
+
+    /**
      * Дуга окружности. Углы в радианах, отсчёт от оси X по часовой стрелке на экране
      */
     void addArc(Rml::Vector2f center, float radius, float startAngle, float endAngle, float width, Rml::Colourb color);
@@ -69,3 +74,10 @@ class MeshBuilder {
 
     int addVertex(Rml::Vector2f position, Rml::Colourb color, float alpha);
 };
+
+/**
+ * Один цвет вместо таблицы для addRing и addConvexPolygon
+ */
+inline std::span<const Rml::Colourb> single(const Rml::Colourb& color) {
+  return { &color, 1 };
+}

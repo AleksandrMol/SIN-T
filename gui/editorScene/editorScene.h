@@ -36,6 +36,8 @@ struct KnobView {
 struct ScreenView {
   WaveScreen* screen;
   ModuleId module;
+  const ParameterDescriptor* wave;
+  const ParameterDescriptor* phase;
 };
 
 struct RouteView {
@@ -100,6 +102,7 @@ class EditorScene final {
     std::optional<ModuleId> graph;
     std::string seenPresetName;
 
+    std::map<ModuleId, ModulePosition> layout; // Авторасстановка зависит только от структуры, поэтому считается при перестройке
     std::vector<KnobView> knobs;
     std::vector<ScreenView> screens;
     std::vector<RouteView> routes;
@@ -108,6 +111,7 @@ class EditorScene final {
     std::vector<WireRef> wireRefs;
 
     void refreshKnob(KnobView& view);
+    void refreshScreen(const ScreenView& view);
     void refreshRoute(RouteView& view);
 
     void buildBreadcrumbs();
@@ -115,7 +119,7 @@ class EditorScene final {
     void buildBlocks();
     void buildBlock(const ModuleInstance& module, ModulePosition position);
     void buildKnob(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter);
-    Rml::Element* buildField(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter, const std::string& label, const std::string& className);
+    void buildField(Rml::Element* parent, const ModuleInstance& module, const ParameterDescriptor& parameter, const std::string& icon, const std::string& label, const std::string& className);
     void addParameterMarks(Rml::Element* cell, const ModuleInstance& module, const ParameterDescriptor& parameter);
     void addStepButton(Rml::Element* parent, ModuleId module, const std::string& parameter, int step, const std::string& text);
     void buildOscillatorFace(Rml::Element* body, const ModuleInstance& module);

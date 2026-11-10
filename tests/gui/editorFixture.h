@@ -181,7 +181,20 @@ struct EditorFixture {
    * Ячейка параметра: у ручки это обёртка с подписью, у поля само поле (D-108)
    */
   Rml::Element* cell(ModuleId module, const std::string& parameter) const {
-    return this->get("[data-module=\"" + std::to_string(module) + "\"][data-parameter=\"" + parameter + "\"]");
+    return this->get(cellSelector(module, parameter));
+  }
+
+  static std::string cellSelector(ModuleId module, const std::string& parameter) {
+    return "[data-module=\"" + std::to_string(module) + "\"][data-parameter=\"" + parameter + "\"]";
+  }
+
+  /**
+   * Декораторы элемента из стилей. Пусто, если их нет
+   */
+  static Rml::DecoratorsPtr decorators(Rml::Element* element) {
+    const Rml::Property* property = element->GetProperty(Rml::PropertyId::Decorator);
+
+    return property ? property->Get<Rml::DecoratorsPtr>() : Rml::DecoratorsPtr();
   }
 
   /**

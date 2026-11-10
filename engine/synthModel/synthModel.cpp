@@ -8,15 +8,6 @@
 #include "../builtinModules/builtinModules.h"
 
 namespace {
-  template <typename T>
-  const T* findByKey(const std::vector<T>& items, std::string_view key) {
-    const auto it = std::find_if(items.begin(), items.end(), [key](const T& item) {
-      return item.key == key;
-    });
-
-    return it == items.end() ? nullptr : &*it;
-  }
-
   std::string moduleLabel(ModuleId id) {
     return "модуль " + std::to_string(id);
   }

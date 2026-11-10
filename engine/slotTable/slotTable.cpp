@@ -11,15 +11,6 @@ namespace {
     return MACRO_COUNT + (slot + 1 - MACRO_COUNT) % POOL_SLOT_COUNT;
   }
 
-  const ParameterDescriptor* findParameter(const ModuleInstance& module, const std::string& key) {
-    const auto& parameters = module.descriptor->parameters;
-    const auto it = std::ranges::find_if(parameters, [&key](const ParameterDescriptor& parameter) {
-      return parameter.key == key;
-    });
-
-    return it != parameters.end() ? &*it : nullptr;
-  }
-
   /**
    * Запись ещё описывает параметр модели. Заглушка не подходит: её описание живёт вместе с моделью
    */
@@ -29,7 +20,7 @@ namespace {
     return module
       && !module->isStub()
       && module->descriptor->type == binding.type
-      && findParameter(*module, binding.parameter);
+      && findByKey(module->descriptor->parameters, binding.parameter);
   }
 
   /**

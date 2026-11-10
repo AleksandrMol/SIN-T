@@ -122,6 +122,7 @@ endif()
 if(SINT_BUILD_GUI)
   # Редактор без окна: его можно запустить в тестах на настоящем RmlUi, без дисплея и OpenGL
   add_library(sint_gui_view STATIC
+    gui/colorTools/colorTools.cpp
     gui/editorDocument/editorDocument.cpp
     gui/editorOverlays/editorOverlays.cpp
     gui/editorScene/editorScene.cpp
@@ -132,9 +133,11 @@ if(SINT_BUILD_GUI)
     gui/knob/knob.cpp
     gui/logoImage/logoImage.cpp
     gui/meshBuilder/meshBuilder.cpp
+    gui/meshElement/meshElement.cpp
     gui/metalTextures/metalTextures.cpp
     gui/parameterControl/parameterControl.cpp
     gui/plateDecorator/plateDecorator.cpp
+    gui/plateMesh/plateMesh.cpp
     gui/rmlRuntime/rmlRuntime.cpp
     gui/valueField/valueField.cpp
     gui/waveScreen/waveScreen.cpp

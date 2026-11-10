@@ -11,13 +11,6 @@ namespace {
   const Rml::Colourb MINOR_COLOR(96, 136, 178, 26);
   const Rml::Colourb MAJOR_COLOR(110, 156, 204, 46);
 
-  void addRectangle(MeshBuilder& builder, Rml::Vector2f from, Rml::Vector2f to, Rml::Colourb color) {
-    const Rml::Vector2f points[4] = { from, Rml::Vector2f(to.x, from.y), to, Rml::Vector2f(from.x, to.y) };
-    const Rml::Colourb colors[1] = { color };
-
-    builder.addConvexPolygon(points, colors);
-  }
-
   float wrapPan(float pan) {
     const float rest = std::fmod(pan, GRID_PERIOD_DP);
 
@@ -79,16 +72,16 @@ Rml::Mesh buildGrid(Rml::Vector2f size, float scale) {
     const float x = std::round((float)index * cell);
     const Rml::Colourb color = index % GRID_MAJOR_EVERY == 0 ? MAJOR_COLOR : MINOR_COLOR;
 
-    addRectangle(builder, Rml::Vector2f(x - width, 0.0f), Rml::Vector2f(x, size.y), SHADOW_COLOR);
-    addRectangle(builder, Rml::Vector2f(x, 0.0f), Rml::Vector2f(x + width, size.y), color);
+    builder.addRectangle(Rml::Vector2f(x - width, 0.0f), Rml::Vector2f(x, size.y), SHADOW_COLOR);
+    builder.addRectangle(Rml::Vector2f(x, 0.0f), Rml::Vector2f(x + width, size.y), color);
   }
 
   for (int index = 0; std::round((float)index * cell) < size.y; index++) {
     const float y = std::round((float)index * cell);
     const Rml::Colourb color = index % GRID_MAJOR_EVERY == 0 ? MAJOR_COLOR : MINOR_COLOR;
 
-    addRectangle(builder, Rml::Vector2f(0.0f, y - width), Rml::Vector2f(size.x, y), SHADOW_COLOR);
-    addRectangle(builder, Rml::Vector2f(0.0f, y), Rml::Vector2f(size.x, y + width), color);
+    builder.addRectangle(Rml::Vector2f(0.0f, y - width), Rml::Vector2f(size.x, y), SHADOW_COLOR);
+    builder.addRectangle(Rml::Vector2f(0.0f, y), Rml::Vector2f(size.x, y + width), color);
   }
 
   return builder.takeMesh();
