@@ -10,21 +10,24 @@
 namespace {
   // Индексы в порядке parameters из описания
   constexpr uint32_t PARAM_WAVE = 0;
-  constexpr uint32_t PARAM_SEMI = 1;
-  constexpr uint32_t PARAM_FINE = 2;
-  constexpr uint32_t PARAM_COARSE = 3;
-  constexpr uint32_t PARAM_PHASE = 4;
-  constexpr uint32_t PARAM_RAND = 5;
-  constexpr uint32_t PARAM_UNISON = 6;
-  constexpr uint32_t PARAM_DETUNE = 7;
-  constexpr uint32_t PARAM_WIDTH = 8;
-  constexpr uint32_t PARAM_PAN = 9;
-  constexpr uint32_t PARAM_LEVEL = 10;
+  constexpr uint32_t PARAM_OCTAVE = 1;
+  constexpr uint32_t PARAM_SEMI = 2;
+  constexpr uint32_t PARAM_FINE = 3;
+  constexpr uint32_t PARAM_COARSE = 4;
+  constexpr uint32_t PARAM_PHASE = 5;
+  constexpr uint32_t PARAM_RAND = 6;
+  constexpr uint32_t PARAM_UNISON = 7;
+  constexpr uint32_t PARAM_DETUNE = 8;
+  constexpr uint32_t PARAM_WIDTH = 9;
+  constexpr uint32_t PARAM_PAN = 10;
+  constexpr uint32_t PARAM_LEVEL = 11;
 
   constexpr float PAN_RANGE = 100.0f;
   constexpr float FULL_CYCLE_DEGREES = 360.0f;
   constexpr float PERCENT = 100.0f;
   constexpr float CENTS_PER_SEMITONE = 100.0f;
+  constexpr float SEMITONES_PER_OCTAVE = 12.0f;
+  constexpr float OCTAVE_RANGE = 4.0f;
 
   // Подголос появляется, уходит и переезжает на новое место за 10 мс (D-023)
   constexpr float FADE_SECONDS = 0.01f;
@@ -93,6 +96,16 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .choices = { "Sine", "Square", "Saw", "Triangle" },
     },
     {
+      // Сдвиг на целые октавы, как OCT на референсе пользователя (D-108). Нет в файле — ноль, звук прежний
+      .key = "octave",
+      .name = "Octave",
+      .minValue = -OCTAVE_RANGE,
+      .maxValue = OCTAVE_RANGE,
+      .defaultValue = 0.0f,
+      .isStepped = true,
+      .isModulatable = true,
+    },
+    {
       .key = "semi",
       .name = "Semi",
       .minValue = -48.0f,
@@ -110,6 +123,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 0.0f,
       .unit = "ct",
       .isModulatable = true,
+      .decimals = 1,
     },
     {
       // До D-103 был ступенчатым и выполнял роль semi. Значения из старых файлов дают ту же высоту
@@ -120,6 +134,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 0.0f,
       .unit = "st",
       .isModulatable = true,
+      .decimals = 2,
     },
     {
       .key = "phase",
@@ -129,6 +144,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 0.0f,
       .unit = "°",
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       // По умолчанию каждая нота со случайной фазы: решение пользователя, звук старых пресетов изменился (D-105)
@@ -139,6 +155,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = PERCENT,
       .unit = "%",
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       .key = "unison",
@@ -158,6 +175,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = 20.0f,
       .unit = "ct",
       .isModulatable = true,
+      .decimals = 1,
     },
     {
       .key = "width",
@@ -167,6 +185,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .defaultValue = PERCENT,
       .unit = "%",
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       .key = "pan",
@@ -175,6 +194,7 @@ const ModuleDescriptor OSCILLATOR_DESCRIPTOR = {
       .maxValue = PAN_RANGE,
       .defaultValue = 0.0f,
       .isModulatable = true,
+      .decimals = 0,
     },
     {
       .key = "level",
@@ -240,7 +260,7 @@ void OscillatorProcessor::process(const ProcessChunk& chunk) {
   // Ступенчатые параметры меняются на границе куска, без интерполяции (D-025)
   const auto wave = (WAVE_TYPE)chunk.parameters[PARAM_WAVE].end;
   const auto count = (uint32_t)chunk.parameters[PARAM_UNISON].end;
-  const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_SEMI].end;
+  const float pitch = chunk.voice->pitch + chunk.parameters[PARAM_OCTAVE].end * SEMITONES_PER_OCTAVE + chunk.parameters[PARAM_SEMI].end;
 
   // Нота начинается сразу со всеми подголосами. Числа берутся по порядку подголосов и при Rand 0:
   // при одном подголоске последовательность та же, что до унисона

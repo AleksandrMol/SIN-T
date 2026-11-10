@@ -6,7 +6,7 @@ const char* const EDITOR_DOCUMENT = R"RML(
 <head>
 <title>SIN-T</title>
 <style>
-  body, div, wire-layer, knob { display: block; }
+  body, div, wire-layer, knob, value-field, wave-screen { display: block; }
   input { display: inline-block; }
 
   /*
@@ -153,8 +153,9 @@ const char* const EDITOR_DOCUMENT = R"RML(
     box-shadow: #000000a0 0dp 0dp 0dp 1dp;
   }
 
-  .block-body { display: flex; flex-direction: row; flex-wrap: wrap; padding: 6dp 4dp; min-height: 28dp; }
-  .block-note { padding: 4dp 10dp 8dp; color: #7f8896; }
+  /* Высоту блока знает авторасстановка (getBlockHeight в graphLayout): правка размеров здесь требует правки и там, тест сверяет их */
+  .block-body { display: flex; flex-direction: row; flex-wrap: wrap; padding: 6dp 4dp; }
+  .block-note { padding: 4dp 10dp 8dp; line-height: 16dp; color: #7f8896; }
   .open-button { margin: 0 10dp 8dp; text-align: center; }
 
 )RML"
@@ -169,6 +170,51 @@ R"RML(
     border-radius: 3dp; background-color: #f0923a;
   }
   .knob-mark.unexported { left: 8dp; right: auto; background-color: #e0566c; }
+
+  /*
+    Лицевая сторона осциллятора (D-108): волна переключается стрелками, на экране поля высоты тона сверху
+    и фазы снизу, под экраном ряд ручек. Поле работает как ручка: подпись и число не ловят мышь,
+    поэтому щелчок, колесо и провод модуляции попадают в само поле
+  */
+  .osc-face { flex-direction: column; flex-wrap: nowrap; padding: 6dp 6dp 2dp; }
+  .wave-select { display: flex; flex-direction: row; align-items: center; height: 20dp; margin-bottom: 4dp; }
+  .step-button {
+    flex: 0 0 20dp; height: 20dp; line-height: 18dp; text-align: center; font-size: 14dp;
+    decorator: plate(button 2dp none); color: #aeb8c6; cursor: pointer;
+  }
+  .step-button:hover { decorator: plate(button-hover 2dp none); color: #ffffff; }
+  .step-button:active { decorator: plate(button-active 2dp none); color: #ffffff; }
+  .osc-screen { padding: 3dp; decorator: plate(display 4dp none); }
+  .field-row { display: flex; flex-direction: row; }
+  .field {
+    position: relative; display: flex; flex-direction: row; align-items: center; flex: 1 1 0dp;
+    height: 18dp; padding: 0 5dp; margin-right: 3dp; box-sizing: border-box;
+    background-color: #ffffff0a; border-radius: 2dp; cursor: pointer; drag: drag;
+  }
+  .field:last-child { margin-right: 0; }
+  .field:hover { background-color: #ffffff16; }
+  .field.legal { background-color: #f0923a38; }
+  /* Пластина рисуется поверх фона, поэтому наведение и подсветка цели провода у Wave — полупрозрачный слой над ней */
+  .field.wave-name { height: 20dp; margin: 0 4dp; background-color: #00000000; decorator: plate(display 3dp none); }
+  .field.wave-name:hover { decorator: linear-gradient(180deg, #ffffff10 0%, #ffffff10 100%), plate(display 3dp none); }
+  .field.wave-name.legal { decorator: linear-gradient(180deg, #f0923a38 0%, #f0923a38 100%), plate(display 3dp none); }
+  /* Четыре поля высоты тона в ряд: отступы меньше, ширины по самому длинному значению «-4», «-48», «-99.9», «-47.99» */
+  .pitch-octave, .pitch-semi, .pitch-fine, .pitch-coarse { padding: 0 4dp; }
+  .pitch-octave .field-name, .pitch-semi .field-name, .pitch-fine .field-name, .pitch-coarse .field-name { margin-right: 3dp; }
+  .pitch-octave { flex-grow: 43; }
+  .pitch-semi { flex-grow: 53; }
+  .pitch-fine { flex-grow: 60; }
+  .pitch-coarse { flex-grow: 67; }
+  .field-icon { flex: 0 0 auto; margin-right: 4dp; color: #7f8896; font-size: 13dp; pointer-events: none; }
+  .field-name { flex: 0 0 auto; margin-right: 4dp; color: #7f8896; font-size: 9dp; font-weight: 600; white-space: nowrap; pointer-events: none; }
+  .field-value { flex: 1 1 auto; text-align: right; color: #9fc4f5; font-size: 11dp; white-space: nowrap; overflow: hidden; pointer-events: none; }
+  .wave-name .field-value { text-align: center; }
+  .field .knob-mark { right: 2dp; top: 2dp; width: 4dp; height: 4dp; border-radius: 2dp; }
+  .field .knob-mark.unexported { left: 2dp; right: auto; }
+  .wave-screen { height: 60dp; margin: 3dp 0; }
+  .knob-row { display: flex; flex-direction: row; justify-content: center; margin-top: 4dp; }
+  .osc-face .knob-cell { width: 46dp; }
+  .knob-divider { width: 0; margin: 4dp 3dp 8dp; border-left: 1dp #0b0d10; border-right: 1dp #ffffff14; }
 
   /*
     Порт — гнездо в металле (D-100): оправа с фаской, свет сверху слева, внутри цветной сердечник.

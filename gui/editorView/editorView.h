@@ -140,6 +140,7 @@ class EditorView final : public Rml::EventListener {
     void setKnobValue(const KnobView& view, float position);
     void changeKnob(const KnobView& view, float delta, bool isFine);
     void promptKnobValue(const KnobView& view);
+    void stepParameter(ModuleId module, const std::string& parameter, int step);
     void setDepthFromMouse(float mouseX);
 
     void showModuleMenu(Rml::Vector2f position, ModulePosition place);

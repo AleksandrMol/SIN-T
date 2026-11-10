@@ -259,7 +259,7 @@ TEST_CASE_FIXTURE(PolyFixture, "Высоту голоса задаёт нота"
   CHECK(std::abs(countRisingCrossings(this->run((uint32_t)SAMPLE_RATE)) - crossings) <= 1);
 }
 
-TEST_CASE_FIXTURE(PolyFixture, "Параметры semi, coarse и fine сдвигают высоту ноты") {
+TEST_CASE_FIXTURE(PolyFixture, "Параметры octave, semi, coarse и fine сдвигают высоту ноты") {
   const ModuleId generator = this->add("generator");
   const ModuleId osc = this->addSine(generator);
 
@@ -267,6 +267,16 @@ TEST_CASE_FIXTURE(PolyFixture, "Параметры semi, coarse и fine сдви
   this->connect(generator, this->model->getOutputId());
 
   float crossings = 0.0f;
+
+  SUBCASE("Octave: две октавы вниз (D-108)") {
+    this->set(osc, "octave", -2.0f);
+    crossings = 110.0f;
+  }
+
+  SUBCASE("Octave ходит только по целым октавам (D-108)") {
+    this->set(osc, "octave", 0.6f);
+    crossings = 880.0f;
+  }
 
   SUBCASE("Semi: октава вверх") {
     this->set(osc, "semi", 12.0f);
@@ -290,10 +300,11 @@ TEST_CASE_FIXTURE(PolyFixture, "Параметры semi, coarse и fine сдви
   }
 
   SUBCASE("Сдвиги складываются") {
-    this->set(osc, "semi", 12.0f);
+    this->set(osc, "octave", 1.0f);
+    this->set(osc, "semi", -5.0f);
     this->set(osc, "coarse", -0.5f);
     this->set(osc, "fine", 50.0f);
-    crossings = 880.0f;
+    crossings = 440.0f * std::pow(2.0f, 7.0f / 12.0f);
   }
 
   this->apply();
